@@ -1,6 +1,6 @@
 import {TextInput, StyleSheet, type TextInputProps} from "react-native";
 
-export function Input({...rest}:TextInputProps){
+export function InputURL({...rest}:TextInputProps) {
     return <TextInput style={styles.input} {...rest} />
 }
 

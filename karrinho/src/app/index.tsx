@@ -1,20 +1,35 @@
-import { Text, View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from "react-native";
-import { Input } from "@/components/input";
+import { Text, View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Alert } from "react-native";
+import { InputURL } from "@/components/input";
 import { Button } from "@/components/button";
+import { useState } from "react";
 
 export default function Home() {
+
+  const[url, setURL] = useState('')
+
+  function verifyURL(url:string){
+    if(!url.trim()){
+      return Alert.alert("Url inválida", "Preencha o campo com uma url válida")
+    }
+
+  }
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, }}
       behavior={Platform.select({ios: 'padding', android: 'height'})}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView 
+      contentContainerStyle={styles.container}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps='handled'
+      >
           <View style={styles.header}>
             <Text style={styles.title}>Karrinho</Text>
           </View>
           <View style={styles.formContainer}>
             <Text>Insira o link do produto:</Text>
-            <Input keyboardType="url"/>
-            <Button label="Adicionar" />
+            <InputURL value={url} onChangeText={setURL} keyboardType="url" placeholder="Digite a url"/>
+            <Button label="Adicionar" onPress={() => verifyURL(url)}/>
           </View>
           <View style={styles.footer}>
             <Text style={styles.title}>footer</Text>

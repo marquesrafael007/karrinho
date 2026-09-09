@@ -8,12 +8,12 @@ const styles = StyleSheet.create({
     input: {
         width: '100%',
         height: 36,
-        backgroundColor: '#5f5f5fff',
+        backgroundColor: '#1f1e20ff',
         borderWidth:1,
-        borderColor: 'gray',
+        borderColor: '#5e5e5eff',
         borderRadius: 16,
         padding: 8,
-        color: '#ffffff6f',
+        color: '#ffffff96',
         fontSize: 12,
     }
 })

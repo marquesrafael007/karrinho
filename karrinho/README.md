@@ -1,4 +1,4 @@
-# Welcome to your Expo app 👋
+# Karrinho
 
 This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
@@ -10,13 +10,32 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm install
    ```
 
-2. Start the app
+2. Install the Playwright browser
 
    ```bash
-   npx expo start
+   npm run setup:browser
    ```
 
-In the output, you'll find options to open the app in a
+3. Start the Node scraping server and Expo together
+
+   ```bash
+   npm run dev
+   ```
+
+The API listens on port `3001`. During local development, the mobile app uses
+the Metro server's LAN hostname automatically, so a phone connected to the same
+network can reach it.
+
+For a deployed mobile app, configure the public server before building:
+
+```bash
+EXPO_PUBLIC_API_URL=https://api.example.com npx expo start
+```
+
+You can also run the processes in separate terminals with `npm run server` and
+`npm run start`.
+
+In the Expo output, you'll find options to open the app in a
 
 - [development build](https://docs.expo.dev/develop/development-builds/introduction/)
 - [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)

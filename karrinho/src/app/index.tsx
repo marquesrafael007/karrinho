@@ -17,6 +17,7 @@ import { InputURL } from "@/components/input";
 import { EnergyOrb } from "@/components/organisms/energy-orb/energy-orb-loader";
 import { saveCartProduct } from "@/storage/cart";
 import type { ScrapedProduct } from "@/types/product";
+import { apiUrl } from "@/utils/api-url";
 import { formatPrice } from "@/utils/format-price";
 
 const CART_REDIRECT_DELAY = 15_000;
@@ -69,7 +70,7 @@ export default function Home() {
     try {
       setLoading(true);
 
-      const response = await fetch("/scrape", {
+      const response = await fetch(apiUrl("/scrape"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -177,7 +178,7 @@ export default function Home() {
               </View>
             )}
 
-            <View>
+            <View style={styles.form}>
               <Text style={styles.formLabel}>Insira o link do produto</Text>
               <Text style={styles.formHint}>
                 Cole uma URL para identificar loja, imagem e preço.
@@ -253,6 +254,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#282727",
     borderRadius: 16,
+  },
+  form: {
+    gap: 4,
+    display: "flex",
+    flexDirection: "column",
+    width: "100%",
   },
   formLabel: {
     color: "#f4f4f0",

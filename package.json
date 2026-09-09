@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "expo-haptics": "^57.0.2",
+    "expo-status-bar": "^57.0.1",
+    "expo-symbols": "^57.0.2",
+    "react-native-reanimated": "^4.6.0"
+  }
+}

@@ -15,18 +15,16 @@ export function Button({ label, ...rest }: ButtonProps) {
 const styles = StyleSheet.create({
     container: {
         width: '100%',
-        height: 'auto',
-        backgroundColor: '#020202',
+        backgroundColor: '#ffffffff',
         borderWidth: 1,
-        borderColor: 'gray',
-        borderRadius: 16,
-        padding: 16,
+        borderRadius: 18,
         justifyContent: 'center',
         alignItems: 'center',
+        padding: 8,
     },
     label:{
-        color: 'white',
+        color: '#000000ff',
         fontWeight: 'bold',
-        fontSize: 16,
+        fontSize: 14,
     }
 })

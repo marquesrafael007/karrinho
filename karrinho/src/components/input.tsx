@@ -7,11 +7,13 @@ export function InputURL({...rest}:TextInputProps) {
 const styles = StyleSheet.create({
     input: {
         width: '100%',
-        height: 48,
-        backgroundColor: '#f1f1f1',
+        height: 36,
+        backgroundColor: '#5f5f5fff',
         borderWidth:1,
         borderColor: 'gray',
         borderRadius: 16,
-        padding: 16,
+        padding: 8,
+        color: '#ffffff6f',
+        fontSize: 12,
     }
 })

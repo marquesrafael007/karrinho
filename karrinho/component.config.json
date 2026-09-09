@@ -1,0 +1,18 @@
+{
+  "$schema": "https://reacticx.com/schema/component.config.json",
+  "outDir": "src/components",
+  "structure": "mirror",
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/src/utils",
+    "hooks": "@/src/hooks"
+  },
+  "paths": {
+    "utils": "src/utils",
+    "hooks": "src/hooks",
+    "types": "src/types",
+    "examples": "src/examples"
+  },
+  "packageManager": "npm",
+  "installDependencies": "auto"
+}

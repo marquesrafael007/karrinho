@@ -84,19 +84,18 @@ export default function Cart() {
 
   return (
     <View style={styles.screen}>
-      <SectionList
+      <View style={styles.container}>
+        <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
         stickySectionHeadersEnabled={false}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
-          styles.content,
           products.length === 0 && styles.emptyContent,
         ]}
         ListHeaderComponent={
           products.length > 0 ? (
             <View style={styles.header}>
-              <Text style={styles.eyebrow}>PRODUTOS SALVOS</Text>
               <Text style={styles.title}>Carrinho</Text>
               <Text style={styles.summary}>
                 {products.length} {products.length === 1 ? "item" : "itens"} em{" "}
@@ -186,8 +185,11 @@ export default function Cart() {
           </View>
         )}
         SectionSeparatorComponent={() => <View style={styles.sectionGap} />}
-        ListFooterComponent={<BottomNav active="cart" />}
       />
+
+      <BottomNav active="cart" />
+      </View>
+      
     </View>
   );
 }
@@ -203,8 +205,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "#111010",
   },
-  content: {
-    paddingTop: 44,
+  container: {
+    flex: 1,
+    paddingTop: 40,
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
@@ -214,12 +217,6 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 28,
-  },
-  eyebrow: {
-    color: "#65e6bf",
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.4,
   },
   title: {
     marginTop: 3,

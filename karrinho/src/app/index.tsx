@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import {
   Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +14,7 @@ import {
 } from "react-native";
 
 import { BottomNav } from "@/components/bottom-nav";
-import { Button } from "@/components/button";
+import { BorderBeam } from "@/components/base/border-beam/border-beam-loader";
 import { InputURL } from "@/components/input";
 import { EnergyOrb } from "@/components/organisms/energy-orb/energy-orb-loader";
 import { saveCartProduct } from "@/storage/cart";
@@ -126,6 +128,7 @@ export default function Home() {
       behavior={Platform.select({ ios: "padding", android: "height" })}
     >
       <ScrollView
+        style={styles.scrollView}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -142,69 +145,122 @@ export default function Home() {
             />
           </View>
 
-          <View style={styles.formContainer}>
-            {product && (
-              <View style={styles.confirmationCard}>
-                <View style={styles.confirmationHeader}>
-                  <Text style={styles.savedLabel}>SALVO NO CARRINHO</Text>
-                  <Text style={styles.redirectLabel}>abrindo em 15s</Text>
+          {loading ? (
+            <BorderBeam
+              style={styles.beamContainer}
+              borderRadius={24}
+              borderWidth={1}
+              colors={["#2563eb", "#67e8f9", "#2563eb"]}
+              ambient={0.04}
+              duration={2.8}
+              intensity={0.9}
+              glow={9}
+            >
+              <View style={styles.formContainer}>
+                <View style={styles.inputRow}>
+                  <InputURL
+                    value={productUrl}
+                    onChangeText={setProductUrl}
+                    editable={!loading}
+                    keyboardType="url"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="Cole o link do produto"
+                    placeholderTextColor="#827d78"
+                    returnKeyType="go"
+                    onSubmitEditing={handleAddProduct}
+                    style={styles.urlInput}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Adicionar produto"
+                    disabled={loading}
+                    onPress={() => void handleAddProduct()}
+                    style={({ pressed }) => [
+                      styles.addButton,
+                      pressed && styles.addButtonPressed,
+                      loading && styles.addButtonDisabled,
+                    ]}
+                  >
+                    <Ionicons name="arrow-up" size={21} color="#211b18" />
+                  </Pressable>
                 </View>
+                <Text style={styles.loadingLabel}>Adicionando...</Text>
+              </View>
+            </BorderBeam>
+          ) : (
+            <View style={styles.beamContainer}>
+              <View style={styles.formContainer}>
+                {product && (
+                  <View style={styles.confirmationCard}>
+                    <View style={styles.confirmationHeader}>
+                      <Text style={styles.savedLabel}>SALVO NO CARRINHO</Text>
+                      <Text style={styles.redirectLabel}>abrindo em 15s</Text>
+                    </View>
 
-                <View style={styles.previewRow}>
-                  {product.imageUrl && (
-                    <Image
-                      source={{ uri: product.imageUrl }}
-                      style={styles.previewImage}
-                    />
-                  )}
-                  <View style={styles.previewCopy}>
-                    <View style={styles.storeRow}>
-                      {product.faviconUrl && (
+                    <View style={styles.previewRow}>
+                      {product.imageUrl && (
                         <Image
-                          source={{ uri: product.faviconUrl }}
-                          style={styles.storeFavicon}
+                          source={{ uri: product.imageUrl }}
+                          style={styles.previewImage}
                         />
                       )}
-                      <Text style={styles.storeName}>{product.storeName}</Text>
+                      <View style={styles.previewCopy}>
+                        <View style={styles.storeRow}>
+                          {product.faviconUrl && (
+                            <Image
+                              source={{ uri: product.faviconUrl }}
+                              style={styles.storeFavicon}
+                            />
+                          )}
+                          <Text style={styles.storeName}>
+                            {product.storeName}
+                          </Text>
+                        </View>
+                        <Text style={styles.productTitle} numberOfLines={2}>
+                          {product.title ?? "Produto sem nome"}
+                        </Text>
+                        <Text style={styles.productPrice}>
+                          {formatPrice(product.price, product.currency)}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.productTitle} numberOfLines={2}>
-                      {product.title ?? "Produto sem nome"}
-                    </Text>
-                    <Text style={styles.productPrice}>
-                      {formatPrice(product.price, product.currency)}
-                    </Text>
                   </View>
+                )}
+
+                <View style={styles.inputRow}>
+                  <InputURL
+                    value={productUrl}
+                    onChangeText={setProductUrl}
+                    keyboardType="url"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="Cole o link do produto"
+                    placeholderTextColor="#827d78"
+                    returnKeyType="go"
+                    onSubmitEditing={handleAddProduct}
+                    style={styles.urlInput}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Adicionar produto"
+                    onPress={() => void handleAddProduct()}
+                    style={({ pressed }) => [
+                      styles.addButton,
+                      pressed && styles.addButtonPressed,
+                    ]}
+                  >
+                    <Ionicons name="arrow-up" size={21} color="#211b18" />
+                  </Pressable>
                 </View>
               </View>
-            )}
-
-            <View style={styles.form}>
-              <Text style={styles.formLabel}>Insira o link do produto</Text>
-              <Text style={styles.formHint}>
-                Cole uma URL para identificar loja, imagem e preço.
-              </Text>
             </View>
-
-            <InputURL
-              value={productUrl}
-              onChangeText={setProductUrl}
-              keyboardType="url"
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="https://loja.com/produto"
-              onSubmitEditing={handleAddProduct}
-            />
-
-            <Button
-              label={loading ? "Buscando produto..." : "Adicionar"}
-              onPress={handleAddProduct}
-              disabled={loading}
-            />
-          </View>
+          )}
         </View>
 
-        <BottomNav active="home" />
       </ScrollView>
+
+      <BottomNav active="home" />
     </KeyboardAvoidingView>
   );
 }
@@ -213,6 +269,10 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: "#111010",
+    paddingBottom: 16,
+  },
+  scrollView: {
+    flex: 1,
   },
   container: {
     flexGrow: 1,
@@ -246,31 +306,55 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     pointerEvents: "none",
   },
+  beamContainer: {
+    width: "100%",
+  },
   formContainer: {
     width: "100%",
-    gap: 12,
-    padding: 16,
-    backgroundColor: "#181717",
+    gap: 13,
+    padding: 12,
+    backgroundColor: "#1d1b1a",
     borderWidth: 1,
-    borderColor: "#282727",
-    borderRadius: 16,
+    borderColor: "#393532",
+    borderRadius: 24,
   },
-  form: {
-    gap: 4,
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
+  inputRow: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  formLabel: {
-    color: "#f4f4f0",
+  urlInput: {
+    flex: 1,
+    minWidth: 0,
+    height: 48,
+    paddingHorizontal: 8,
+    color: "#eeeae5",
     fontSize: 16,
-    fontWeight: "600",
+    backgroundColor: "transparent",
+    borderWidth: 0,
   },
-  formHint: {
-    marginTop: 3,
-    color: "#8d9296",
-    fontSize: 13,
-    lineHeight: 18,
+  addButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 22,
+    backgroundColor: "#e8e3dc",
+  },
+  addButtonPressed: {
+    opacity: 0.72,
+  },
+  addButtonDisabled: {
+    opacity: 0.62,
+  },
+  loadingLabel: {
+    marginTop: -7,
+    paddingLeft: 8,
+    paddingBottom: 2,
+    color: "#b8aea7",
+    fontSize: 12,
+    fontWeight: "500",
   },
   confirmationCard: {
     gap: 12,

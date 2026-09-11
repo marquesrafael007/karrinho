@@ -52,6 +52,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "test:scraping": "tsx --test scripts/scraping.test.ts",
     "lint": "expo lint"
   },
   "private": true

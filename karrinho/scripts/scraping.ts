@@ -1,6 +1,7 @@
 import * as cheerio from "cheerio";
 import type { PriceCandidate, ScrapedProduct } from "../src/types/product";
 import { renderProductPage } from "./browser";
+import { findStoreAdapter, type ValueSelector } from "./store-adapters";
 
 type JsonObject = Record<string, unknown>;
 const STATIC_TIMEOUT_MS = 12_000;
@@ -99,7 +100,62 @@ function findProducts(value: unknown, products: JsonObject[]): void {
   if (!isObject(value)) return;
 
   if (hasType(value, "Product")) products.push(value);
-  if (value["@graph"]) findProducts(value["@graph"], products);
+
+  // Stores sometimes nest Product under custom state keys instead of @graph.
+  // Walking every value makes the structured-data layer tolerate both shapes.
+  Object.values(value).forEach((child) => findProducts(child, products));
+}
+
+function readSelectorValue(
+  $: cheerio.CheerioAPI,
+  selector: ValueSelector,
+): string | null {
+  const element = $(selector.selector).first();
+  return asText(
+    selector.attribute ? element.attr(selector.attribute) : element.text(),
+  );
+}
+
+function firstSelectorValue(
+  $: cheerio.CheerioAPI,
+  selectors: ValueSelector[],
+): string | null {
+  for (const selector of selectors) {
+    const value = readSelectorValue($, selector);
+    if (value) return value;
+  }
+
+  return null;
+}
+
+function extractStoreAdapter(
+  $: cheerio.CheerioAPI,
+  pageUrl: URL,
+  candidates: PriceCandidate[],
+  sourcePrefix: string,
+) {
+  const adapter = findStoreAdapter(pageUrl.hostname);
+  if (!adapter) return null;
+
+  for (const priceSelector of adapter.prices) {
+    const value = readSelectorValue($, priceSelector);
+    if (!value) continue;
+
+    addCandidate(
+      candidates,
+      value,
+      priceSelector.currency ?? inferCurrency(pageUrl),
+      `${sourcePrefix}store:${adapter.id}`,
+      1,
+    );
+    break;
+  }
+
+  return {
+    storeName: adapter.storeName,
+    title: firstSelectorValue($, adapter.titles),
+    imageUrl: absoluteUrl(firstSelectorValue($, adapter.images), pageUrl),
+  };
 }
 
 function firstObject(value: unknown): JsonObject | null {
@@ -343,6 +399,7 @@ export function extractProductFromHtml(
   const candidates: PriceCandidate[] = [];
   const structuredProduct = extractJsonLd($, url, candidates, sourcePrefix);
   const storeInfo = extractStoreInfo($, url);
+  const storeProduct = extractStoreAdapter($, url, candidates, sourcePrefix);
 
   extractMetaCandidates($, candidates, sourcePrefix);
   extractVisiblePriceCandidates($, candidates, url, sourcePrefix);
@@ -350,6 +407,7 @@ export function extractProductFromHtml(
 
   const bestPrice = candidates[0] ?? null;
   const title =
+    storeProduct?.title ??
     structuredProduct?.title ??
     $('meta[property="og:title"]').attr("content")?.trim() ??
     $("title").text().trim() ??
@@ -360,13 +418,14 @@ export function extractProductFromHtml(
     $('meta[name="description"]').attr("content")?.trim() ??
     null;
   const imageUrl =
+    storeProduct?.imageUrl ??
     structuredProduct?.imageUrl ??
     absoluteUrl($('meta[property="og:image"]').attr("content"), url);
 
   return {
     url: url.toString(),
     store: storeInfo.hostname,
-    storeName: storeInfo.storeName,
+    storeName: storeProduct?.storeName ?? storeInfo.storeName,
     faviconUrl: storeInfo.faviconUrl,
     title,
     description,

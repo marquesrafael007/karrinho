@@ -127,17 +127,10 @@ export default function Home() {
       style={styles.screen}
       behavior={Platform.select({ ios: "padding", android: "height" })}
     >
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.header}>
-          <Text style={styles.title}>Karrinho</Text>
-        </View>
-
-        <View style={styles.content}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Karrinho</Text>
+      </View>
+      <View style={styles.content}>
           <View style={styles.energyOrbContainer}>
             <EnergyOrb
               intensity={0.9}
@@ -145,10 +138,14 @@ export default function Home() {
             />
           </View>
 
+          <View style={styles.headlineLabelContainer}>
+            <Text style={styles.headlineLabel}>Adicione produtos ao seu carrinho</Text>
+          </View>
+
           {loading ? (
             <BorderBeam
               style={styles.beamContainer}
-              borderRadius={24}
+              borderRadius={36}
               borderWidth={1}
               colors={["#2563eb", "#67e8f9", "#2563eb"]}
               ambient={0.04}
@@ -156,7 +153,7 @@ export default function Home() {
               intensity={0.9}
               glow={9}
             >
-              <View style={styles.formContainer}>
+              <View style={[styles.formContainer]}>
                 <View style={styles.inputRow}>
                   <InputURL
                     value={productUrl}
@@ -185,8 +182,8 @@ export default function Home() {
                     <Ionicons name="arrow-up" size={21} color="#211b18" />
                   </Pressable>
                 </View>
-                <Text style={styles.loadingLabel}>Adicionando...</Text>
               </View>
+              <Text style={styles.loadingLabel}>Adicionando...</Text>
             </BorderBeam>
           ) : (
             <View style={styles.beamContainer}>
@@ -194,8 +191,7 @@ export default function Home() {
                 {product && (
                   <View style={styles.confirmationCard}>
                     <View style={styles.confirmationHeader}>
-                      <Text style={styles.savedLabel}>SALVO NO CARRINHO</Text>
-                      <Text style={styles.redirectLabel}>abrindo em 15s</Text>
+                      <Text style={styles.savedLabel}>Salvo no carrinho</Text>
                     </View>
 
                     <View style={styles.previewRow}>
@@ -227,7 +223,7 @@ export default function Home() {
                     </View>
                   </View>
                 )}
-
+                
                 <View style={styles.inputRow}>
                   <InputURL
                     value={productUrl}
@@ -257,9 +253,6 @@ export default function Home() {
             </View>
           )}
         </View>
-
-      </ScrollView>
-
       <BottomNav active="home" />
     </KeyboardAvoidingView>
   );
@@ -270,6 +263,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#111010",
     paddingBottom: 16,
+    paddingTop: 36,
+    paddingHorizontal: 16,
   },
   scrollView: {
     flex: 1,
@@ -277,7 +272,6 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     paddingTop: 40,
-    paddingHorizontal: 16,
     paddingBottom: 12,
   },
   header: {
@@ -308,6 +302,7 @@ const styles = StyleSheet.create({
   },
   beamContainer: {
     width: "100%",
+    borderRadius: 12,
   },
   formContainer: {
     width: "100%",
@@ -316,7 +311,16 @@ const styles = StyleSheet.create({
     backgroundColor: "#1d1b1a",
     borderWidth: 1,
     borderColor: "#393532",
-    borderRadius: 24,
+    borderRadius: 36,
+  },
+  headlineLabelContainer:{
+    padding: 12,
+  },
+  headlineLabel: {
+    color: "#f5f5f2",
+    fontSize: 18,
+    fontWeight: "400",
+    letterSpacing: -0.8,
   },
   inputRow: {
     minHeight: 48,
@@ -349,7 +353,7 @@ const styles = StyleSheet.create({
     opacity: 0.62,
   },
   loadingLabel: {
-    marginTop: -7,
+    marginTop: 9,
     paddingLeft: 8,
     paddingBottom: 2,
     color: "#b8aea7",

@@ -20,16 +20,17 @@ function loadPlaywright(): typeof import("playwright") {
 
 export async function renderProductPage(productUrl: string): Promise<RenderedPage> {
   const { chromium } = loadPlaywright();
-  const browser = await chromium.launch({ headless: true });
+  // Prefer the locally installed, up-to-date Chrome. Some commerce CDNs reject
+  // the older Chromium build bundled with Playwright. CI can still fall back to
+  // the bundled browser when Chrome is unavailable.
+  const browser = await chromium
+    .launch({ channel: "chrome", headless: true })
+    .catch(() => chromium.launch({ headless: true }));
 
   try {
     const context = await browser.newContext({
       locale: "pt-BR",
       timezoneId: "America/Sao_Paulo",
-      userAgent:
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
-        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/136.0.0.0 Safari/537.36",
       viewport: { width: 1365, height: 900 },
     });
     const page = await context.newPage();

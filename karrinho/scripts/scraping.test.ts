@@ -88,16 +88,20 @@ const fixtures: Fixture[] = [
     source: "store:casas-bahia",
   },
   {
-    name: "Shopee fallback uses stable product attributes",
-    url: "https://shopee.com.br/produto-i.1.2",
+    name: "Shopee reads its embedded product state without DOM classes",
+    url: 'https://shopee.com.br/produto-i.1.2?extraParams={"display_model_id":20}',
     body: `
-      <main><h1 data-testid="product-title">Capa</h1></main>
-      <meta property="og:image" content="https://cf.shopee.com.br/capa.jpg">
-      <div data-testid="product-price">R$ 39,90</div>`,
+      <script type="text/mfe-initial-data">{
+        "initialState":{"item":{"items":{"2":{
+          "title":"Capa", "image":"br-image-id", "currency":"BRL",
+          "is_unavailable":false,
+          "models":[{"modelid":20,"price":3990000}]
+        }}}}
+      }</script>`,
     title: "Capa",
     price: "39.90",
-    image: "https://cf.shopee.com.br/capa.jpg",
-    source: "store:shopee-br",
+    image: "https://down-br.img.susercontent.com/file/br-image-id",
+    source: "store:shopee-state",
   },
 ];
 
@@ -112,3 +116,25 @@ for (const fixture of fixtures) {
     assert.match(product.priceSource ?? "", new RegExp(fixture.source ?? ""));
   });
 }
+
+test("rejects Magalu access-denied pages instead of saving an empty card", () => {
+  assert.throws(
+    () =>
+      extractProductFromHtml(
+        "<html><head><title>Magazine Luiza | Não é possível acessar a página</title></head></html>",
+        "https://www.magazineluiza.com.br/produto/p/123",
+      ),
+    /blocked automated access/,
+  );
+});
+
+test("rejects empty Casas Bahia shells instead of saving an empty card", () => {
+  assert.throws(
+    () =>
+      extractProductFromHtml(
+        "<html><head></head><body></body></html>",
+        "https://www.casasbahia.com.br/produto/p/123",
+      ),
+    /blocked automated access/,
+  );
+});

@@ -158,6 +158,77 @@ function extractStoreAdapter(
   };
 }
 
+function extractShopeeState(
+  $: cheerio.CheerioAPI,
+  pageUrl: URL,
+  candidates: PriceCandidate[],
+  sourcePrefix: string,
+) {
+  if (!pageUrl.hostname.replace(/^www\./, "").endsWith("shopee.com.br")) {
+    return null;
+  }
+
+  const content = $('script[type="text/mfe-initial-data"]').first().text().trim();
+  if (!content) return null;
+
+  try {
+    const state = JSON.parse(content) as JsonObject;
+    const initialState = firstObject(state.initialState);
+    const itemState = firstObject(initialState?.item);
+    const items = firstObject(itemState?.items);
+    const item = items ? Object.values(items).find(isObject) : null;
+    if (!item) return null;
+
+    let selectedModelId: number | null = null;
+    const extraParams = pageUrl.searchParams.get("extraParams");
+    if (extraParams) {
+      try {
+        const parsed = JSON.parse(extraParams) as JsonObject;
+        const id = Number(parsed.display_model_id);
+        if (Number.isFinite(id)) selectedModelId = id;
+      } catch {
+        // A malformed optional variation parameter should not discard the item.
+      }
+    }
+
+    const models = Array.isArray(item.models) ? item.models.filter(isObject) : [];
+    const selectedModel =
+      models.find(
+        (model) => Number(model.modelid ?? model.model_id) === selectedModelId,
+      ) ?? null;
+    const rawPrice =
+      selectedModel?.price ??
+      item.price ??
+      item.price_min ??
+      item.price_max;
+
+    // Shopee represents BRL prices in units of 1/100000 in its page state.
+    const scaledPrice =
+      typeof rawPrice === "number" ? rawPrice / 100_000 : rawPrice;
+    addCandidate(
+      candidates,
+      scaledPrice,
+      item.currency ?? "BRL",
+      `${sourcePrefix}store:shopee-state`,
+      1,
+    );
+
+    const imageId = asText(item.image) ??
+      (Array.isArray(item.images) ? asText(item.images[0]) : null);
+
+    return {
+      title: asText(item.title ?? item.name),
+      description: asText(item.description),
+      imageUrl: imageId
+        ? `https://down-br.img.susercontent.com/file/${imageId}`
+        : null,
+      availability: item.is_unavailable === true ? "OutOfStock" : "InStock",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function firstObject(value: unknown): JsonObject | null {
   if (Array.isArray(value)) return value.find(isObject) ?? null;
   return isObject(value) ? value : null;
@@ -396,10 +467,25 @@ export function extractProductFromHtml(
     );
   }
 
+  const normalizedTitle = $("title").text().replace(/\s+/g, " ").trim();
+  const normalizedBody = $("body").text().replace(/\s+/g, " ").trim();
+  const storeBlockedPage =
+    /não é possível acessar a página/i.test(normalizedTitle) ||
+    /alguns detalhes do erro:\s*reference id:/i.test(normalizedBody) ||
+    (/casasbahia\.com\.br$/.test(url.hostname) && normalizedBody.length === 0);
+
+  if (storeBlockedPage) {
+    throw new Error(
+      `${url.hostname} blocked automated access before returning product data. ` +
+        "Use an official store API or an authorized scraping provider for this store.",
+    );
+  }
+
   const candidates: PriceCandidate[] = [];
   const structuredProduct = extractJsonLd($, url, candidates, sourcePrefix);
   const storeInfo = extractStoreInfo($, url);
   const storeProduct = extractStoreAdapter($, url, candidates, sourcePrefix);
+  const shopeeProduct = extractShopeeState($, url, candidates, sourcePrefix);
 
   extractMetaCandidates($, candidates, sourcePrefix);
   extractVisiblePriceCandidates($, candidates, url, sourcePrefix);
@@ -407,17 +493,20 @@ export function extractProductFromHtml(
 
   const bestPrice = candidates[0] ?? null;
   const title =
+    shopeeProduct?.title ??
     storeProduct?.title ??
     structuredProduct?.title ??
     $('meta[property="og:title"]').attr("content")?.trim() ??
     $("title").text().trim() ??
     null;
   const description =
+    shopeeProduct?.description ??
     structuredProduct?.description ??
     $('meta[property="og:description"]').attr("content")?.trim() ??
     $('meta[name="description"]').attr("content")?.trim() ??
     null;
   const imageUrl =
+    shopeeProduct?.imageUrl ??
     storeProduct?.imageUrl ??
     structuredProduct?.imageUrl ??
     absoluteUrl($('meta[property="og:image"]').attr("content"), url);
@@ -432,7 +521,8 @@ export function extractProductFromHtml(
     imageUrl,
     price: bestPrice?.price ?? null,
     currency: bestPrice?.currency ?? (bestPrice ? inferCurrency(url) : null),
-    availability: structuredProduct?.availability ?? null,
+    availability:
+      shopeeProduct?.availability ?? structuredProduct?.availability ?? null,
     priceSource: bestPrice?.source ?? null,
     confidence: bestPrice?.confidence ?? 0,
     priceCandidates: candidates,

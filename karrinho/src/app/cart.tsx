@@ -16,6 +16,7 @@ import { BottomNav } from "@/components/bottom-nav";
 import { getCartProducts, removeCartProduct } from "@/storage/cart";
 import type { SavedProduct } from "@/types/product";
 import { formatPrice } from "@/utils/format-price";
+import { calculateCartTotal } from "../utils/cart";
 
 type StoreSection = {
   title: string;
@@ -81,6 +82,8 @@ export default function Cart() {
       </View>
     );
   }
+  //Total prices of products
+  const totalCart = calculateCartTotal(products);
 
   return (
     <View style={styles.screen}>
@@ -100,6 +103,13 @@ export default function Cart() {
               <Text style={styles.summary}>
                 {products.length} {products.length === 1 ? "item" : "itens"} em{" "}
                 {sections.length} {sections.length === 1 ? "loja" : "lojas"}
+              </Text>
+              <Text style={styles.summary}>
+                Total:{" "}
+                {totalCart.toLocaleString("pt-BR", {
+                  style: "currency",
+                  currency: "BRL",
+                })}
               </Text>
             </View>
           ) : null

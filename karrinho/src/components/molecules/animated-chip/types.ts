@@ -6,9 +6,7 @@ import type { SharedValue, WithSpringConfig } from "react-native-reanimated";
 type TChipValue = string | number;
 
 type TChipComponents =
-  | "AnimatedChip.Item"
-  | "AnimatedChip.Icon"
-  | "AnimatedChip.Label";
+  "AnimatedChip.Item" | "AnimatedChip.Icon" | "AnimatedChip.Label";
 
 /** What a chip's children are told about the chip they live in. */
 interface IChipState {
@@ -23,6 +21,7 @@ type TChipRenderable = ReactNode | ((state: IChipState) => ReactNode);
 
 interface IAnimatedChipGroup {
   children: ReactNode;
+  readonly accessibilityLabel?: string;
   /** Selected value — pass with `onValueChange` to control the group. */
   readonly value?: TChipValue;
   /** Selected value on first render when the group is uncontrolled. */
@@ -45,6 +44,7 @@ interface IAnimatedChipGroup {
 
 interface IAnimatedChipItem {
   children: ReactNode;
+  readonly accessibilityLabel?: string;
   /** Identifier handed to `onValueChange` when this chip is picked. */
   readonly value: TChipValue;
   /** Background once selected. */

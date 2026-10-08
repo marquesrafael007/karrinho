@@ -124,17 +124,99 @@ test("rejects Magalu access-denied pages instead of saving an empty card", () =>
         "<html><head><title>Magazine Luiza | Não é possível acessar a página</title></head></html>",
         "https://www.magazineluiza.com.br/produto/p/123",
       ),
-    /blocked automated access/,
+    /bloqueou a consulta/,
   );
 });
 
-test("rejects empty Casas Bahia shells instead of saving an empty card", () => {
+test("empty shells remain incomplete so the browser layer can render them", () => {
+  const product = extractProductFromHtml(
+    "<html><body></body></html>",
+    "https://www.casasbahia.com.br/produto/p/123",
+  );
+  assert.equal(product.title, null);
+  assert.equal(product.price, null);
+});
+
+test("keeps JSON-LD title and image even when the price is absent", () => {
+  const result = extractProductFromHtml(
+    '<script type="application/ld+json">{"@type":"Product","name":"Tênis","image":"/tenis.jpg"}</script>',
+    "https://loja.example/p/1",
+  );
+  assert.equal(result.title, "Tênis");
+  assert.equal(result.imageUrl, "https://loja.example/tenis.jpg");
+  assert.equal(result.price, null);
+});
+
+test("selects the main JSON-LD product instead of the first recommendation", () => {
+  const result = extractProductFromHtml(
+    `<h1>Notebook</h1><script type="application/ld+json">[
+    {"@type":"Product","name":"Cabo","url":"/cabo","offers":{"price":20}},
+    {"@type":"Product","name":"Notebook","url":"/notebook","offers":{"price":5000,"priceCurrency":"BRL"}}
+  ]</script>`,
+    "https://loja.example/notebook",
+  );
+  assert.equal(result.price, "5000.00");
+  assert.equal(result.title, "Notebook");
+});
+
+test("does not confirm installments, old, hidden, or recommendation prices", () => {
+  const result = extractProductFromHtml(
+    `<h1>Produto</h1><aside><meta itemprop="price" content="12.00"></aside>
+    <div class="recommendations"><meta itemprop="price" content="23.00"></div>
+    <del class="price">R$ 400,00</del><span hidden itemprop="price" content="3.00"></span>
+    <div class="price">12x de R$ 25,00</div><div class="shipping-price">R$ 10,00</div>`,
+    "https://loja.example/p/1",
+  );
+  assert.equal(result.price, null);
+});
+
+test("does not mistake ambiguous offers or aggregate ranges for a selected variation", () => {
+  for (const offers of [
+    [{ price: 20 }, { price: 50 }],
+    { "@type": "AggregateOffer", lowPrice: 20, highPrice: 50 },
+  ]) {
+    const result = extractProductFromHtml(
+      `<script type="application/ld+json">${JSON.stringify({ "@type": "Product", name: "Produto", offers })}</script>`,
+      "https://loja.example/product",
+    );
+    assert.equal(result.price, null);
+  }
+});
+
+test("reads unfamiliar Next.js stores through embedded product data", () => {
+  const result = extractProductFromHtml(
+    `<h1>Luminária</h1><script id="__NEXT_DATA__" type="application/json">{
+    "props":{"pageProps":{"product":{"name":"Luminária","price":{"amount":129.9,"currency":"BRL"},"image":"/lamp.jpg"}}}
+  }</script>`,
+    "https://loja.example/product",
+  );
+  assert.equal(result.title, "Luminária");
+  assert.equal(result.price, "129.90");
+  assert.equal(result.currency, "BRL");
+});
+
+test("reads the selected Shopify variant in cents", () => {
+  const result = extractProductFromHtml(
+    `<script type="application/json">{"product":{
+    "title":"Camiseta","handle":"camiseta","currency":"BRL","variants":[{"id":10,"price":9900},{"id":20,"price":12990}]}}
+  </script>`,
+    "https://loja.example/products/camiseta?variant=20",
+  );
+  assert.equal(result.price, "129.90");
+});
+
+test("rejects challenge pages and unsafe images", () => {
   assert.throws(
     () =>
       extractProductFromHtml(
-        "<html><head></head><body></body></html>",
-        "https://www.casasbahia.com.br/produto/p/123",
+        "<title>Just a moment...</title>",
+        "https://loja.example/p/1",
       ),
-    /blocked automated access/,
+    /bloqueou/,
   );
+  const result = extractProductFromHtml(
+    '<h1>Produto</h1><meta property="og:image" content="javascript:alert(1)">',
+    "https://loja.example/p/1",
+  );
+  assert.equal(result.imageUrl, null);
 });

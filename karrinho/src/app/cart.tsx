@@ -1,385 +1,342 @@
-import { useCallback, useMemo, useState } from "react";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useMemo, useState } from "react";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
-  Alert,
-  Image,
   Linking,
-  Pressable,
   SectionList,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
-
-import { BottomNav } from "@/components/bottom-nav";
-import { getCartProducts, removeCartProduct } from "@/storage/cart";
+import { AppFrame } from "@/components/app-frame";
+import { CartOverview } from "@/components/cart-overview";
+import { ProductCard } from "@/components/product-card";
+import { EditProduct } from "@/components/edit-product";
+import { Button } from "@/components/button";
+import { Pressable } from "@/components/atoms/pressable";
+import SegmentedControl from "@/components/organisms/segmented-control";
+import { Grid, Type } from "@/constants/theme";
+import { useDesign } from "@/design/theme-provider";
+import { cartRepository } from "@/storage/cart";
+import { useCart } from "@/storage/cart-context";
 import type { SavedProduct } from "@/types/product";
-import { formatPrice } from "@/utils/format-price";
-import { calculateCartTotal } from "../utils/cart";
 
-type StoreSection = {
-  title: string;
-  faviconUrl: string | null;
-  data: SavedProduct[];
-};
-
+type StoreSection = { title: string; domain: string; data: SavedProduct[] };
 export default function Cart() {
   const router = useRouter();
-  const [products, setProducts] = useState<SavedProduct[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const loadProducts = useCallback(async () => {
-    try {
-      setProducts(await getCartProducts());
-    } catch {
-      Alert.alert("Erro", "Não foi possível carregar o carrinho.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      void loadProducts();
-    }, [loadProducts]),
-  );
-
-  const sections = useMemo<StoreSection[]>(() => {
+  const { colors } = useDesign();
+  const { width } = useWindowDimensions();
+  const { products, loading, error: storageError } = useCart();
+  const [filter, setFilter] = useState<"all" | "review">("all");
+  const [editing, setEditing] = useState<SavedProduct | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pendingCount = products.filter(
+    (item) => item.status !== "ready",
+  ).length;
+  const sections = useMemo(() => {
     const stores = new Map<string, StoreSection>();
-
-    products.forEach((product) => {
-      const key = product.store;
-      const section = stores.get(key);
-
+    for (const product of products) {
+      if (filter === "review" && product.status === "ready") continue;
+      const section = stores.get(product.store);
       if (section) {
         section.data.push(product);
-      } else {
-        stores.set(key, {
+        if (
+          section.title === product.store &&
+          product.storeName !== product.store
+        )
+          section.title = product.storeName;
+      } else
+        stores.set(product.store, {
           title: product.storeName,
-          faviconUrl: product.faviconUrl,
+          domain: product.store,
           data: [product],
         });
-      }
-    });
-
-    return Array.from(stores.values()).sort((a, b) =>
-      a.title.localeCompare(b.title),
-    );
-  }, [products]);
-
-  async function handleRemove(product: SavedProduct) {
-    await removeCartProduct(product.id);
-    setProducts((current) =>
-      current.filter((item) => item.id !== product.id),
-    );
+    }
+    return [...stores.values()].sort((a, b) => a.title.localeCompare(b.title));
+  }, [products, filter]);
+  async function action(operation: () => Promise<unknown>) {
+    setError(null);
+    try {
+      await operation();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível concluir a ação.",
+      );
+    }
   }
-
-  if (loading) {
-    return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator color="#65e6bf" />
-      </View>
-    );
-  }
-  //Total prices of products
-  const totalCart = calculateCartTotal(products);
-
   return (
-    <View style={styles.screen}>
-      <View style={styles.container}>
-        <SectionList
+    <AppFrame active="cart">
+      {(error || storageError) && (
+        <Text
+          accessibilityRole="alert"
+          style={[styles.error, { color: colors.danger }]}
+        >
+          {error || storageError}
+        </Text>
+      )}
+      <SectionList
+        style={styles.fill}
         sections={sections}
         keyExtractor={(item) => item.id}
         stickySectionHeadersEnabled={false}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[
-          products.length === 0 && styles.emptyContent,
-        ]}
+        contentContainerStyle={styles.content}
         ListHeaderComponent={
-          products.length > 0 ? (
+          <>
             <View style={styles.header}>
-              <Text style={styles.title}>Carrinho</Text>
-              <Text style={styles.summary}>
-                {products.length} {products.length === 1 ? "item" : "itens"} em{" "}
-                {sections.length} {sections.length === 1 ? "loja" : "lojas"}
-              </Text>
-              <Text style={styles.summary}>
-                Total:{" "}
-                {totalCart.toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
-              </Text>
+              <View style={styles.headingCopy}>
+                <Text
+                  accessibilityRole="header"
+                  style={[styles.title, { color: colors.ink }]}
+                >
+                  Seu carrinho
+                </Text>
+                <Text style={[styles.description, { color: colors.muted }]}>
+                  Guardados para você decidir depois.
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel="Adicionar produto"
+                onPress={() => router.replace("/")}
+                style={[styles.add, { backgroundColor: colors.accentFill }]}
+              >
+                <View aria-hidden>
+                  <Ionicons name="add" size={24} color={colors.onAccent} />
+                </View>
+              </Pressable>
             </View>
-          ) : null
+            {products.length > 0 && (
+              <View style={styles.summary}>
+                <CartOverview compact />
+              </View>
+            )}
+            {products.length > 0 && (
+              <View style={styles.filters}>
+                <SegmentedControl
+                  currentIndex={filter === "all" ? 0 : 1}
+                  onChange={(index) =>
+                    setFilter(index === 0 ? "all" : "review")
+                  }
+                  labels={["Todos", "A conferir"]}
+                  accessibilityLabel="Filtrar produtos"
+                  width={Math.min(width, Grid.maxWidth) - Grid.gutter * 2}
+                  segmentedControlBackgroundColor={colors.soft}
+                  activeSegmentBackgroundColor={colors.surface}
+                  activeSegmentBorderColor={colors.control}
+                  dividerColor="transparent"
+                  paddingVertical={4}
+                  borderRadius={14}
+                  disableScaleEffect
+                  disableBlur
+                  enablePanGesture={false}
+                >
+                  {[
+                    {
+                      label: "Todos",
+                      count: products.length,
+                      selected: filter === "all",
+                    },
+                    {
+                      label: "A conferir",
+                      count: pendingCount,
+                      selected: filter === "review",
+                    },
+                  ].map((tab) => (
+                    <View key={tab.label} style={styles.filterLabelRow}>
+                      <Text
+                        style={[
+                          styles.filterLabel,
+                          { color: tab.selected ? colors.ink : colors.muted },
+                        ]}
+                      >
+                        {tab.label}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.filterCount,
+                          {
+                            color: tab.selected ? colors.accent : colors.muted,
+                          },
+                        ]}
+                      >
+                        {tab.count}
+                      </Text>
+                    </View>
+                  ))}
+                </SegmentedControl>
+              </View>
+            )}
+          </>
         }
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptySymbol}>🛒</Text>
-            <Text style={styles.emptyTitle}>Seu carrinho está vazio</Text>
-            <Text style={styles.emptyDescription}>
-              Adicione links de produtos para reunir suas escolhas em um só lugar.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => router.replace("/")}
-              style={({ pressed }) => [
-                styles.primaryAction,
-                pressed && styles.pressed,
+          loading ? (
+            <View style={styles.empty}>
+              <ActivityIndicator
+                color={colors.accent}
+                accessibilityLabel="Carregando carrinho"
+              />
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.empty,
+                { backgroundColor: colors.surface, borderColor: colors.line },
               ]}
             >
-              <Text style={styles.primaryActionLabel}>Adicionar produto</Text>
-            </Pressable>
-          </View>
+              <View
+                aria-hidden
+                style={[
+                  styles.emptyIcon,
+                  { backgroundColor: colors.accentSoft },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    filter === "review"
+                      ? "checkmark-done-outline"
+                      : "bag-handle-outline"
+                  }
+                  size={30}
+                  color={colors.accent}
+                />
+              </View>
+              <Text
+                accessibilityRole="header"
+                style={[styles.emptyTitle, { color: colors.ink }]}
+              >
+                {filter === "review"
+                  ? "Tudo conferido."
+                  : "Um lugar para seus próximos achados"}
+              </Text>
+              <Text style={[styles.emptyText, { color: colors.muted }]}>
+                {filter === "review"
+                  ? "Seus produtos já têm os dados confirmados."
+                  : "Adicione o link de um produto. Seus itens ficam organizados aqui, por loja."}
+              </Text>
+              <Button
+                label={
+                  filter === "review"
+                    ? "Ver todos os produtos"
+                    : "Adicionar primeiro produto"
+                }
+                icon={filter === "review" ? undefined : "add"}
+                onPress={() =>
+                  filter === "review" ? setFilter("all") : router.replace("/")
+                }
+              />
+            </View>
+          )
         }
         renderSectionHeader={({ section }) => (
           <View style={styles.storeHeader}>
-            {section.faviconUrl && (
-              <Image
-                source={{ uri: section.faviconUrl }}
-                style={styles.storeFavicon}
-              />
-            )}
-            <Text style={styles.storeName}>{section.title}</Text>
-            <View style={styles.storeCount}>
-              <Text style={styles.storeCountText}>{section.data.length}</Text>
-            </View>
+            <Text
+              accessibilityRole="header"
+              style={[styles.storeName, { color: colors.ink }]}
+            >
+              {section.title}
+            </Text>
+            <Text style={[styles.storeCount, { color: colors.muted }]}>
+              {section.data.length}{" "}
+              {section.data.length === 1 ? "item" : "itens"}
+            </Text>
           </View>
         )}
         renderItem={({ item }) => (
-          <View style={styles.productCard}>
-            {item.imageUrl ? (
-              <Image
-                source={{ uri: item.imageUrl }}
-                style={styles.productImage}
-              />
-            ) : (
-              <View style={[styles.productImage, styles.imageFallback]}>
-                <Text style={styles.imageFallbackText}>sem imagem</Text>
-              </View>
-            )}
-
-            <View style={styles.productCopy}>
-              <Text style={styles.productTitle} numberOfLines={3}>
-                {item.title ?? "Produto sem nome"}
-              </Text>
-              <Text style={styles.productPrice}>
-                {formatPrice(item.price, item.currency)}
-              </Text>
-
-              <View style={styles.actions}>
-                <Pressable
-                  accessibilityRole="link"
-                  onPress={() => void Linking.openURL(item.url)}
-                  style={({ pressed }) => [
-                    styles.openAction,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.openActionLabel}>Abrir produto</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remover ${item.title ?? "produto"}`}
-                  onPress={() => void handleRemove(item)}
-                  style={({ pressed }) => [
-                    styles.removeAction,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.removeActionLabel}>Remover</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
+          <ProductCard
+            product={item}
+            onEdit={() => setEditing(item)}
+            onOpen={() => void action(() => Linking.openURL(item.url))}
+            onRemove={() => void action(() => cartRepository.remove(item.id))}
+            onRetry={() => void action(() => cartRepository.retry(item.id))}
+          />
         )}
+        ItemSeparatorComponent={() => <View style={styles.itemGap} />}
         SectionSeparatorComponent={() => <View style={styles.sectionGap} />}
       />
-
-      <BottomNav active="cart" />
-      </View>
-      
-    </View>
+      {editing && (
+        <EditProduct
+          key={editing.id}
+          product={editing}
+          onClose={() => setEditing(null)}
+        />
+      )}
+    </AppFrame>
   );
 }
-
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#111010",
-  },
-  loadingScreen: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#111010",
-  },
-  container: {
-    flex: 1,
-    paddingTop: 40,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-  },
-  emptyContent: {
-    flexGrow: 1,
-    justifyContent: "space-between",
+  fill: { flex: 1 },
+  content: { paddingTop: 16, paddingBottom: 24, flexGrow: 1 },
+  error: {
+    fontFamily: Type.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    paddingVertical: 12,
   },
   header: {
-    marginBottom: 28,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 16,
+    marginBottom: 24,
   },
+  headingCopy: { flex: 1, gap: 8 },
   title: {
-    marginTop: 3,
-    color: "#f5f5f2",
-    fontSize: 34,
-    fontWeight: "700",
-    letterSpacing: -1.2,
+    fontFamily: Type.bold,
+    fontSize: 26,
+    lineHeight: 33,
+    letterSpacing: -0.6,
   },
-  summary: {
-    marginTop: 6,
-    color: "#85898c",
-    fontSize: 14,
+  description: { fontFamily: Type.regular, fontSize: 16, lineHeight: 24 },
+  add: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
   },
+  summary: { marginBottom: 24 },
+  filters: { marginBottom: 4 },
+  filterLabelRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterLabel: { fontFamily: Type.medium, fontSize: 15, lineHeight: 22 },
+  filterCount: { fontFamily: Type.medium, fontSize: 13, lineHeight: 20 },
   storeHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 9,
-    marginBottom: 10,
+    gap: 16,
+    paddingTop: 22,
+    paddingBottom: 14,
   },
-  storeFavicon: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    backgroundColor: "#ffffff",
-  },
-  storeName: {
-    flex: 1,
-    color: "#f0f0ec",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  storeCount: {
-    minWidth: 24,
-    height: 24,
+  storeName: { fontFamily: Type.medium, fontSize: 18, lineHeight: 25, flex: 1 },
+  storeCount: { fontFamily: Type.regular, fontSize: 14, lineHeight: 20 },
+  itemGap: { height: 12 },
+  sectionGap: { height: 4 },
+  empty: { padding: 24, borderRadius: 22, borderWidth: 1, gap: 16 },
+  emptyIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 12,
-    backgroundColor: "#252525",
-  },
-  storeCountText: {
-    color: "#aeb2b4",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  productCard: {
-    flexDirection: "row",
-    gap: 14,
-    marginBottom: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#292929",
-    borderRadius: 16,
-    backgroundColor: "#181717",
-  },
-  productImage: {
-    width: 96,
-    height: 120,
-    borderRadius: 11,
-    backgroundColor: "#242424",
-  },
-  imageFallback: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  imageFallbackText: {
-    color: "#6d7174",
-    fontSize: 10,
-  },
-  productCopy: {
-    flex: 1,
-    minHeight: 120,
-  },
-  productTitle: {
-    color: "#eeeeeb",
-    fontSize: 15,
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-  productPrice: {
-    marginTop: 6,
-    color: "#ffffff",
-    fontSize: 19,
-    fontWeight: "700",
-  },
-  actions: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    marginTop: "auto",
-    paddingTop: 12,
-  },
-  openAction: {
-    minHeight: 32,
-    justifyContent: "center",
-  },
-  openActionLabel: {
-    color: "#65e6bf",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  removeAction: {
-    minHeight: 32,
-    justifyContent: "center",
-  },
-  removeActionLabel: {
-    color: "#8e9295",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  pressed: {
-    opacity: 0.55,
-  },
-  sectionGap: {
-    height: 18,
-  },
-  emptyState: {
-    flex: 1,
-    maxWidth: 360,
-    alignSelf: "center",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 24,
-  },
-  emptySymbol: {
-    marginBottom: 18,
-    fontSize: 38,
   },
   emptyTitle: {
-    color: "#f4f4f0",
-    fontSize: 24,
-    fontWeight: "700",
-    letterSpacing: -0.6,
-    textAlign: "center",
+    fontFamily: Type.medium,
+    fontSize: 22,
+    lineHeight: 29,
+    letterSpacing: -0.3,
   },
-  emptyDescription: {
-    marginTop: 10,
-    color: "#888d90",
-    fontSize: 15,
-    lineHeight: 22,
-    textAlign: "center",
-  },
-  primaryAction: {
-    minHeight: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "stretch",
-    marginTop: 24,
-    borderRadius: 14,
-    backgroundColor: "#2876d5",
-  },
-  primaryActionLabel: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "700",
+  emptyText: {
+    fontFamily: Type.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    maxWidth: 520,
   },
 });

@@ -2,6 +2,11 @@ import * as cheerio from "cheerio";
 import type { PriceCandidate, ScrapedProduct } from "../src/types/product";
 import { renderProductPage } from "./browser";
 import { findStoreAdapter, type ValueSelector } from "./store-adapters";
+import { parsePrice } from "../src/utils/price";
+import { normalizeProductUrl } from "../src/utils/product-url";
+import { fetchPublicHtml } from "./public-web";
+import { ScrapeError } from "./scrape-error";
+import { extractEmbeddedProduct } from "./embedded-product";
 
 type JsonObject = Record<string, unknown>;
 const STATIC_TIMEOUT_MS = 12_000;
@@ -17,26 +22,7 @@ function asText(value: unknown): string | null {
 }
 
 function normalizePrice(value: unknown): string | null {
-  const raw = asText(value);
-  if (!raw) return null;
-
-  let numeric = raw.replace(/\s/g, "").replace(/[^0-9,.-]/g, "");
-  if (!numeric) return null;
-
-  const comma = numeric.lastIndexOf(",");
-  const dot = numeric.lastIndexOf(".");
-
-  if (comma > -1 && dot > -1) {
-    numeric =
-      comma > dot
-        ? numeric.replace(/\./g, "").replace(",", ".")
-        : numeric.replace(/,/g, "");
-  } else if (comma > -1) {
-    numeric = numeric.replace(",", ".");
-  }
-
-  const parsed = Number(numeric);
-  return Number.isFinite(parsed) ? parsed.toFixed(2) : null;
+  return parsePrice(value);
 }
 
 function normalizeCurrency(value: unknown): string | null {
@@ -44,10 +30,10 @@ function normalizeCurrency(value: unknown): string | null {
   if (!currency) return null;
 
   const knownCurrencies: Record<string, string> = {
-    "R$": "BRL",
+    R$: "BRL",
     BRL: "BRL",
-    "US$": "USD",
-    "$": "USD",
+    US$: "USD",
+    $: "USD",
     USD: "USD",
     "€": "EUR",
     EUR: "EUR",
@@ -55,7 +41,9 @@ function normalizeCurrency(value: unknown): string | null {
     GBP: "GBP",
   };
 
-  return knownCurrencies[currency.toUpperCase()] ?? currency.toUpperCase();
+  const result =
+    knownCurrencies[currency.toUpperCase()] ?? currency.toUpperCase();
+  return /^[A-Z]{3}$/.test(result) ? result : null;
 }
 
 function inferCurrency(pageUrl: URL): string | null {
@@ -73,7 +61,10 @@ function absoluteUrl(value: unknown, pageUrl: URL): string | null {
   if (!imageText) return null;
 
   try {
-    return new URL(imageText, pageUrl).toString();
+    const resolved = new URL(imageText, pageUrl);
+    return ["http:", "https:"].includes(resolved.protocol)
+      ? resolved.toString()
+      : null;
   } catch {
     return null;
   }
@@ -87,13 +78,14 @@ function hasType(object: JsonObject, expectedType: string): boolean {
   return types.some(
     (type) =>
       typeof type === "string" &&
-      type.toLowerCase() === expectedType.toLowerCase(),
+      type.split(/[/#]/).pop()?.toLowerCase() === expectedType.toLowerCase(),
   );
 }
 
-function findProducts(value: unknown, products: JsonObject[]): void {
+function findProducts(value: unknown, products: JsonObject[], depth = 0): void {
+  if (depth > 20 || products.length > 100) return;
   if (Array.isArray(value)) {
-    value.forEach((item) => findProducts(item, products));
+    value.forEach((item) => findProducts(item, products, depth + 1));
     return;
   }
 
@@ -103,14 +95,45 @@ function findProducts(value: unknown, products: JsonObject[]): void {
 
   // Stores sometimes nest Product under custom state keys instead of @graph.
   // Walking every value makes the structured-data layer tolerate both shapes.
-  Object.values(value).forEach((child) => findProducts(child, products));
+  if (hasType(value, "ItemList")) return;
+  Object.entries(value).forEach(([key, child]) => {
+    if (!/recommend|related|suggest|itemListElement/i.test(key))
+      findProducts(child, products, depth + 1);
+  });
+}
+
+function excludedPriceElement(
+  $: cheerio.CheerioAPI,
+  element: Parameters<cheerio.CheerioAPI>[0],
+): boolean {
+  const node = $(element);
+  if (node.closest('del, s, aside, [hidden], [aria-hidden="true"]').length)
+    return true;
+  const hints = node
+    .parents()
+    .addBack()
+    .map((_, parent) =>
+      [
+        $(parent).attr("id"),
+        $(parent).attr("class"),
+        $(parent).attr("data-testid"),
+        $(parent).attr("style"),
+      ].join(" "),
+    )
+    .get()
+    .join(" ");
+  return /recommend|related|suggest|carousel|cross.?sell|combined|installment|parcel|old.?price|list.?price|compare.?price|display\s*:\s*none|visibility\s*:\s*hidden/i.test(
+    hints,
+  );
 }
 
 function readSelectorValue(
   $: cheerio.CheerioAPI,
   selector: ValueSelector,
 ): string | null {
-  const element = $(selector.selector).first();
+  const element = $(selector.selector)
+    .filter((_, node) => !excludedPriceElement($, node))
+    .first();
   return asText(
     selector.attribute ? element.attr(selector.attribute) : element.text(),
   );
@@ -148,7 +171,13 @@ function extractStoreAdapter(
       `${sourcePrefix}store:${adapter.id}`,
       1,
     );
-    break;
+    if (
+      candidates.some(
+        (candidate) =>
+          candidate.source === `${sourcePrefix}store:${adapter.id}`,
+      )
+    )
+      break;
   }
 
   return {
@@ -164,11 +193,14 @@ function extractShopeeState(
   candidates: PriceCandidate[],
   sourcePrefix: string,
 ) {
-  if (!pageUrl.hostname.replace(/^www\./, "").endsWith("shopee.com.br")) {
+  if (findStoreAdapter(pageUrl.hostname)?.id !== "shopee-br") {
     return null;
   }
 
-  const content = $('script[type="text/mfe-initial-data"]').first().text().trim();
+  const content = $('script[type="text/mfe-initial-data"]')
+    .first()
+    .text()
+    .trim();
   if (!content) return null;
 
   try {
@@ -191,20 +223,28 @@ function extractShopeeState(
       }
     }
 
-    const models = Array.isArray(item.models) ? item.models.filter(isObject) : [];
+    const models = Array.isArray(item.models)
+      ? item.models.filter(isObject)
+      : [];
     const selectedModel =
       models.find(
         (model) => Number(model.modelid ?? model.model_id) === selectedModelId,
       ) ?? null;
     const rawPrice =
       selectedModel?.price ??
-      item.price ??
-      item.price_min ??
-      item.price_max;
+      (models.length <= 1 ||
+      new Set(models.map((model) => model.price)).size === 1
+        ? item.price
+        : null) ??
+      (item.price_min === item.price_max ? item.price_min : null);
 
     // Shopee represents BRL prices in units of 1/100000 in its page state.
     const scaledPrice =
-      typeof rawPrice === "number" ? rawPrice / 100_000 : rawPrice;
+      rawPrice !== null &&
+      rawPrice !== undefined &&
+      Number.isFinite(Number(rawPrice))
+        ? Number(rawPrice) / 100_000
+        : null;
     addCandidate(
       candidates,
       scaledPrice,
@@ -213,7 +253,8 @@ function extractShopeeState(
       1,
     );
 
-    const imageId = asText(item.image) ??
+    const imageId =
+      asText(item.image) ??
       (Array.isArray(item.images) ? asText(item.images[0]) : null);
 
     return {
@@ -234,12 +275,28 @@ function firstObject(value: unknown): JsonObject | null {
   return isObject(value) ? value : null;
 }
 
-function readOffer(product: JsonObject): JsonObject | null {
-  const offer = firstObject(product.offers);
+function readOffer(product: JsonObject, pageUrl: URL): JsonObject | null {
+  const offers = Array.isArray(product.offers)
+    ? product.offers.filter(isObject)
+    : [product.offers].filter(isObject);
+  const exact = offers.find((offer) => {
+    const location = absoluteUrl(offer.url, pageUrl);
+    return (
+      location &&
+      normalizeProductUrl(location) === normalizeProductUrl(pageUrl.toString())
+    );
+  });
+  const amounts = new Set(
+    offers.map(
+      (offer) => `${normalizePrice(offer.price)}:${offer.priceCurrency}`,
+    ),
+  );
+  if (!exact && offers.length > 1 && amounts.size > 1) return null;
+  const offer = exact ?? offers[0];
   if (!offer) return null;
 
   // AggregateOffer sometimes contains an inner list of real offers.
-  return firstObject(offer.offers) ?? offer;
+  return offer.offers ? readOffer({ offers: offer.offers }, pageUrl) : offer;
 }
 
 function addCandidate(
@@ -282,28 +339,40 @@ function extractJsonLd(
     }
   });
 
-  for (const product of products) {
-    const offer = readOffer(product);
-    if (!offer) continue;
-
-    const priceSpecification = firstObject(offer.priceSpecification);
+  const heading = $("h1").first().text().trim().toLowerCase();
+  const score = (product: JsonObject) => {
+    const location = absoluteUrl(product.url ?? product["@id"], pageUrl);
+    return (
+      (location && new URL(location).pathname === pageUrl.pathname ? 10 : 0) +
+      (heading && asText(product.name)?.toLowerCase() === heading ? 5 : 0)
+    );
+  };
+  const unique = [...new Set(products)];
+  unique.sort((a, b) => score(b) - score(a));
+  // Ambiguous structured products may be a listing/recommendation section.
+  const selected =
+    unique.length === 1 ||
+    (unique.length > 1 && score(unique[0]) > score(unique[1]))
+      ? unique[0]
+      : null;
+  if (selected) {
+    const product = selected;
+    const offer = readOffer(product, pageUrl);
+    const priceSpecification = firstObject(offer?.priceSpecification);
     const price =
-      offer.price ??
-      offer.lowPrice ??
+      offer?.price ??
+      (offer?.lowPrice === offer?.highPrice ? offer?.lowPrice : null) ??
       priceSpecification?.price;
-    const currency =
-      offer.priceCurrency ?? priceSpecification?.priceCurrency;
+    const currency = offer?.priceCurrency ?? priceSpecification?.priceCurrency;
 
     addCandidate(candidates, price, currency, `${sourcePrefix}json-ld`, 0.98);
 
-    if (normalizePrice(price)) {
-      return {
-        title: asText(product.name),
-        description: asText(product.description),
-        imageUrl: absoluteUrl(product.image, pageUrl),
-        availability: asText(offer.availability),
-      };
-    }
+    return {
+      title: asText(product.name),
+      description: asText(product.description),
+      imageUrl: absoluteUrl(product.image, pageUrl),
+      availability: asText(offer?.availability),
+    };
   }
 
   return null;
@@ -316,8 +385,10 @@ function extractMetaCandidates(
 ): void {
   const selectors = [
     {
-      price: 'meta[property="product:price:amount"]',
-      currency: 'meta[property="product:price:currency"]',
+      price:
+        'meta[property="product:price:amount"], meta[name="product:price:amount"]',
+      currency:
+        'meta[property="product:price:currency"], meta[name="product:price:currency"]',
       source: "product-meta",
       confidence: 0.94,
     },
@@ -336,7 +407,21 @@ function extractMetaCandidates(
   ];
 
   selectors.forEach((selector) => {
-    const priceElement = $(selector.price).first();
+    const priceElements = $(selector.price).filter(
+      (_, node) => !excludedPriceElement($, node),
+    );
+    if (
+      selector.source === "microdata" &&
+      new Set(
+        priceElements
+          .map((_, node) =>
+            normalizePrice($(node).attr("content") ?? $(node).text()),
+          )
+          .get(),
+      ).size > 1
+    )
+      return;
+    const priceElement = priceElements.first();
     const currencyElement = $(selector.currency).first();
 
     addCandidate(
@@ -379,14 +464,24 @@ function extractVisiblePriceCandidates(
     '[aria-label*="price" i]',
   ].join(",");
   const seen = new Set<string>();
-  const pricePattern = /(R\$|US\$|\$|€|£)\s*([0-9]+(?:[.\s][0-9]{3})*(?:,[0-9]{2})|[0-9]+(?:[.,][0-9]{2})?)/i;
+  const pricePattern =
+    /(R\$|US\$|\$|€|£)\s*([0-9]+(?:[.\s][0-9]{3})*(?:,[0-9]{2})|[0-9]+(?:[.,][0-9]{2})?)/i;
 
   $(selectors)
     .slice(0, 80)
     .each((_, element) => {
       const node = $(element);
-      const text = node.attr("content") ?? node.attr("aria-label") ?? node.text();
+      if (excludedPriceElement($, element)) return;
+      const text =
+        node.attr("content") ?? node.attr("aria-label") ?? node.text();
       const normalizedText = text.replace(/\s+/g, " ").trim();
+      if (
+        /\b\d+\s*x\b|parcela|frete|shipping|a partir|\bfrom\b/i.test(
+          normalizedText,
+        ) ||
+        (normalizedText.match(/R\$|US\$|[$€£]/g)?.length ?? 0) > 1
+      )
+        return;
       const match = normalizedText.match(pricePattern);
       if (!match) return;
 
@@ -403,8 +498,12 @@ function extractVisiblePriceCandidates(
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
-      const looksCurrent = /(sale|current|final|best|agora|por|pix)/.test(hints);
-      const looksOld = /(old|original|list|regular|compare|was|de:)/.test(hints);
+      const looksCurrent = /(sale|current|final|best|agora|por|pix)/.test(
+        hints,
+      );
+      const looksOld = /(old|original|list|regular|compare|was|de:)/.test(
+        hints,
+      );
       const confidence = looksOld ? 0.5 : looksCurrent ? 0.72 : 0.62;
 
       addCandidate(
@@ -462,22 +561,27 @@ export function extractProductFromHtml(
     html.includes("/gz/account-verification");
 
   if (suspiciousTrafficPage) {
-    throw new Error(
-      "Mercado Livre blocked automated access to this page. This store requires its official API with authentication.",
+    throw new ScrapeError(
+      "A loja bloqueou a consulta automática. Abra o link ou complete os dados manualmente.",
+      "STORE_BLOCKED",
+      false,
     );
   }
 
   const normalizedTitle = $("title").text().replace(/\s+/g, " ").trim();
   const normalizedBody = $("body").text().replace(/\s+/g, " ").trim();
   const storeBlockedPage =
+    /access denied|just a moment|verify you are human|captcha|robot check|sign in|login|verifique.*humano/i.test(
+      normalizedTitle,
+    ) ||
     /não é possível acessar a página/i.test(normalizedTitle) ||
-    /alguns detalhes do erro:\s*reference id:/i.test(normalizedBody) ||
-    (/casasbahia\.com\.br$/.test(url.hostname) && normalizedBody.length === 0);
+    /alguns detalhes do erro:\s*reference id:/i.test(normalizedBody);
 
   if (storeBlockedPage) {
-    throw new Error(
-      `${url.hostname} blocked automated access before returning product data. ` +
-        "Use an official store API or an authorized scraping provider for this store.",
+    throw new ScrapeError(
+      "A loja bloqueou a consulta automática. Abra o link ou complete os dados manualmente.",
+      "STORE_BLOCKED",
+      false,
     );
   }
 
@@ -486,22 +590,36 @@ export function extractProductFromHtml(
   const storeInfo = extractStoreInfo($, url);
   const storeProduct = extractStoreAdapter($, url, candidates, sourcePrefix);
   const shopeeProduct = extractShopeeState($, url, candidates, sourcePrefix);
+  const embedded = extractEmbeddedProduct($, url);
+  if (embedded)
+    addCandidate(
+      candidates,
+      embedded.price,
+      embedded.currency ?? inferCurrency(url),
+      `${sourcePrefix}embedded-product`,
+      0.95,
+    );
 
   extractMetaCandidates($, candidates, sourcePrefix);
   extractVisiblePriceCandidates($, candidates, url, sourcePrefix);
   candidates.sort((a, b) => b.confidence - a.confidence);
 
-  const bestPrice = candidates[0] ?? null;
+  // Heuristic text is useful evidence, but never a confirmed cart price.
+  const bestPrice =
+    candidates.find((candidate) => candidate.confidence >= 0.9) ?? null;
   const title =
     shopeeProduct?.title ??
     storeProduct?.title ??
     structuredProduct?.title ??
+    embedded?.title ??
     $('meta[property="og:title"]').attr("content")?.trim() ??
-    $("title").text().trim() ??
+    asText($("h1").first().text()) ??
+    asText($("title").text()) ??
     null;
   const description =
     shopeeProduct?.description ??
     structuredProduct?.description ??
+    embedded?.description ??
     $('meta[property="og:description"]').attr("content")?.trim() ??
     $('meta[name="description"]').attr("content")?.trim() ??
     null;
@@ -509,13 +627,14 @@ export function extractProductFromHtml(
     shopeeProduct?.imageUrl ??
     storeProduct?.imageUrl ??
     structuredProduct?.imageUrl ??
+    absoluteUrl(embedded?.image, url) ??
     absoluteUrl($('meta[property="og:image"]').attr("content"), url);
 
   return {
     url: url.toString(),
     store: storeInfo.hostname,
     storeName: storeProduct?.storeName ?? storeInfo.storeName,
-    faviconUrl: storeInfo.faviconUrl,
+    faviconUrl: storeInfo.faviconUrl ?? new URL("/favicon.ico", url).toString(),
     title,
     description,
     imageUrl,
@@ -530,7 +649,13 @@ export function extractProductFromHtml(
 }
 
 function isCompleteProduct(product: ScrapedProduct): boolean {
-  return Boolean(product.title && product.imageUrl && product.price);
+  return Boolean(
+    product.title &&
+    product.imageUrl &&
+    product.price &&
+    product.currency &&
+    product.confidence >= 0.9,
+  );
 }
 
 function mergeProducts(
@@ -566,8 +691,7 @@ function mergeProducts(
     title: renderedProduct.title ?? staticProduct.title,
     description: renderedProduct.description ?? staticProduct.description,
     imageUrl: renderedProduct.imageUrl ?? staticProduct.imageUrl,
-    availability:
-      renderedProduct.availability ?? staticProduct.availability,
+    availability: renderedProduct.availability ?? staticProduct.availability,
     price: priceProduct.price,
     currency: priceProduct.currency,
     priceSource: priceProduct.priceSource,
@@ -581,7 +705,7 @@ function mergeProducts(
 export async function scrapeProduct(
   productUrl: string,
 ): Promise<ScrapedProduct> {
-  const url = new URL(productUrl);
+  const url = new URL(normalizeProductUrl(productUrl));
 
   if (url.protocol !== "https:" && url.protocol !== "http:") {
     throw new Error("Only HTTP and HTTPS URLs are supported.");
@@ -595,30 +719,13 @@ export async function scrapeProduct(
   let staticError: unknown = null;
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: "text/html,application/xhtml+xml",
-        "User-Agent": "Karrinho/1.0 (personal product tracker)",
-      },
-      signal: AbortSignal.timeout(STATIC_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      throw new Error(
-        `The store returned ${response.status} ${response.statusText}`,
-      );
-    }
-
-    const contentType = response.headers.get("content-type");
-    if (!contentType?.includes("text/html")) {
-      throw new Error(`Expected HTML, but received ${contentType}`);
-    }
-
-    staticProduct = extractProductFromHtml(
-      await response.text(),
-      response.url || url.toString(),
+    const response = await fetchPublicHtml(
+      url.toString(),
+      AbortSignal.timeout(STATIC_TIMEOUT_MS),
     );
+    staticProduct = extractProductFromHtml(response.html, response.url);
   } catch (error) {
+    if (error instanceof ScrapeError && !error.retryable) throw error;
     staticError = error;
   }
 
@@ -636,16 +743,13 @@ export async function scrapeProduct(
     return mergeProducts(staticProduct, renderedProduct);
   } catch (browserError) {
     if (staticProduct) return staticProduct;
-
-    const staticMessage =
-      staticError instanceof Error ? staticError.message : "static request failed";
-    const browserMessage =
-      browserError instanceof Error
-        ? browserError.message
-        : "browser rendering failed";
-
-    throw new Error(
-      `The store could not be read. Static layer: ${staticMessage}. Browser layer: ${browserMessage}`,
+    if (browserError instanceof ScrapeError) throw browserError;
+    if (staticError instanceof ScrapeError) throw staticError;
+    throw new ScrapeError(
+      "A loja não respondeu a tempo. O link continua salvo para tentar novamente.",
+      "STORE_UNAVAILABLE",
+      true,
+      503,
     );
   }
 }

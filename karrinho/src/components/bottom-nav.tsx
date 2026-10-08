@@ -1,55 +1,80 @@
 import { useRouter } from "expo-router";
-import { StyleSheet, Text, View } from "react-native";
-
+import { Ionicons } from "@expo/vector-icons";
+import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedChip } from "@/components/molecules/animated-chip";
+import { Type } from "@/constants/theme";
+import { useDesign } from "@/design/theme-provider";
 
-type BottomNavProps = {
-  active: "home" | "cart";
-};
-
-export function BottomNav({ active }: BottomNavProps) {
+export function BottomNav({ active }: { active: "home" | "cart" }) {
   const router = useRouter();
-
+  const { colors } = useDesign();
+  const insets = useSafeAreaInsets();
   return (
-    <View style={styles.footer}>
-      <AnimatedChip
+    <View
+      style={{
+        paddingTop: 12,
+        paddingBottom: Math.max(insets.bottom, 16),
+        paddingLeft: insets.left + 20,
+        paddingRight: insets.right + 20,
+        alignItems: "center",
+        backgroundColor: colors.background,
+      }}
+    >
+      <AnimatedChip.Group
         value={active}
-        onValueChange={(value) => {
-          router.replace(value === "cart" ? "/cart" : "/");
-        }}
-        style={styles.container}
+        onValueChange={(value) =>
+          router.replace(value === "cart" ? "/cart" : "/")
+        }
+        accessibilityLabel="Navegação principal"
+        haptics={false}
+        springConfig={{ damping: 22, stiffness: 220, overshootClamping: true }}
       >
-        <AnimatedChip.Item value="home" activeColor="#2876d5">
-          <AnimatedChip.Icon>
-            <Text style={styles.icon}>🏠</Text>
-          </AnimatedChip.Icon>
-          <AnimatedChip.Label>Home</AnimatedChip.Label>
-        </AnimatedChip.Item>
-        <AnimatedChip.Item value="cart" activeColor="#2876d5">
-          <AnimatedChip.Icon>
-            <Text style={styles.icon}>🛒</Text>
-          </AnimatedChip.Icon>
-          <AnimatedChip.Label>Carrinho</AnimatedChip.Label>
-        </AnimatedChip.Item>
-      </AnimatedChip>
+        {(
+          [
+            {
+              key: "home",
+              label: "Início",
+              icon: "home-outline",
+              selectedIcon: "home",
+            },
+            {
+              key: "cart",
+              label: "Carrinho",
+              icon: "bag-handle-outline",
+              selectedIcon: "bag-handle",
+            },
+          ] as const
+        ).map((item) => (
+          <AnimatedChip.Item
+            key={item.key}
+            value={item.key}
+            accessibilityLabel={item.label}
+            activeColor={colors.accentFill}
+            inactiveColor={colors.soft}
+          >
+            <AnimatedChip.Icon>
+              {({ selected }) => (
+                <Ionicons
+                  name={selected ? item.selectedIcon : item.icon}
+                  size={22}
+                  color={selected ? colors.onAccent : colors.muted}
+                />
+              )}
+            </AnimatedChip.Icon>
+            <AnimatedChip.Label
+              color={colors.onAccent}
+              style={{
+                fontFamily: Type.medium,
+                fontSize: 16,
+                fontWeight: "500",
+              }}
+            >
+              {item.label}
+            </AnimatedChip.Label>
+          </AnimatedChip.Item>
+        ))}
+      </AnimatedChip.Group>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  footer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  container: {
-    width: "auto",
-    padding: 8,
-    backgroundColor: "#0b2f51",
-    borderRadius: 100,
-  },
-  icon: {
-    fontSize: 18,
-  },
-});

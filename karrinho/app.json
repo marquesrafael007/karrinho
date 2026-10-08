@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "scheme": "karrinho",
     "userInterfaceStyle": "automatic",
+    "backgroundColor": "#F7F8F6",
     "ios": {
       "icon": "./assets/expo.icon"
     },
@@ -19,13 +20,16 @@
     },
     "plugins": [
       "expo-router",
+      "expo-system-ui",
+      ["expo-navigation-bar", { "enforceContrast": false }],
       [
         "expo-splash-screen",
         {
           "image": "./assets/expo.icon/Assets/grid.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#208AEF"
+          "backgroundColor": "#F7F8F6",
+          "dark": { "backgroundColor": "#121814" }
         }
       ],
       "expo-image",

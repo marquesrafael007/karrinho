@@ -2,424 +2,315 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import {
-  Alert,
-  Image,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from "react-native";
+import { AppFrame } from "@/components/app-frame";
+import { ProductCard } from "@/components/product-card";
+import AnimatedInputBar from "@/components/base/animated-input-bar";
+import { Pressable } from "@/components/atoms/pressable";
+import { Type } from "@/constants/theme";
+import { useDesign } from "@/design/theme-provider";
+import { cartRepository } from "@/storage/cart";
+import { useCart } from "@/storage/cart-context";
 
-import { BottomNav } from "@/components/bottom-nav";
-import { BorderBeam } from "@/components/base/border-beam/border-beam-loader";
-import { InputURL } from "@/components/input";
-import { EnergyOrb } from "@/components/organisms/energy-orb/energy-orb-loader";
-import { saveCartProduct } from "@/storage/cart";
-import type { ScrapedProduct } from "@/types/product";
-import { apiUrl } from "@/utils/api-url";
-import { formatPrice } from "@/utils/format-price";
-
-const CART_REDIRECT_DELAY = 15_000;
-
-function isScrapedProduct(value: unknown): value is ScrapedProduct {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "url" in value &&
-    typeof value.url === "string" &&
-    "store" in value &&
-    typeof value.store === "string" &&
-    "storeName" in value &&
-    typeof value.storeName === "string"
-  );
-}
-
-function getErrorMessage(value: unknown): string | null {
-  if (
-    typeof value === "object" &&
-    value !== null &&
-    "error" in value &&
-    typeof value.error === "string"
-  ) {
-    return value.error;
-  }
-
-  return null;
-}
+const PLACEHOLDERS = ["Cole o link aqui"];
 
 export default function Home() {
   const router = useRouter();
-  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { colors } = useDesign();
+  const { fontScale } = useWindowDimensions();
+  const { products, loading, error: storageError } = useCart();
   const [productUrl, setProductUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [product, setProduct] = useState<ScrapedProduct | null>(null);
-
+  const [saving, setSaving] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const savingRef = useRef(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const processing = products.some(
+    (product) =>
+      product.status === "processing" || product.status === "pending",
+  );
   useEffect(() => {
-    return () => {
-      if (redirectTimer.current) clearTimeout(redirectTimer.current);
-    };
-  }, []);
+    if (!previewId) return;
+    const timer = setTimeout(() => setPreviewId(null), 15_000);
+    return () => clearTimeout(timer);
+  }, [previewId]);
 
   async function handleAddProduct() {
-    if (!productUrl.trim()) {
-      Alert.alert("URL obrigatória", "Insira o link de um produto.");
-      return;
-    }
-
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
     try {
-      setLoading(true);
-
-      const response = await fetch(apiUrl("/scrape"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ url: productUrl.trim() }),
-      });
-
-      const responseText = await response.text();
-      let result: unknown;
-
-      try {
-        result = JSON.parse(responseText);
-      } catch {
-        throw new Error(
-          responseText || "O servidor retornou uma resposta inválida.",
-        );
-      }
-
-      if (!response.ok) {
-        throw new Error(
-          getErrorMessage(result) ?? "Não foi possível salvar o produto.",
-        );
-      }
-
-      if (!isScrapedProduct(result)) {
-        throw new Error("O servidor retornou um produto inválido.");
-      }
-
-      await saveCartProduct(result);
-      setProduct(result);
+      const saved = await cartRepository.enqueue(productUrl);
+      setPreviewId(saved.id);
       setProductUrl("");
-
-      if (redirectTimer.current) clearTimeout(redirectTimer.current);
-      redirectTimer.current = setTimeout(() => {
-        setProduct(null);
-        router.push("/cart");
-      }, CART_REDIRECT_DELAY);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Não foi possível salvar o produto.";
-
-      Alert.alert("Erro", message);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível salvar. Tente novamente.",
+      );
     } finally {
-      setLoading(false);
+      setSaving(false);
+      savingRef.current = false;
     }
   }
+  const recent = products.slice(0, 4);
+  // Keep a just-saved duplicate visible even when it is older than the recent list.
+  const preview = products.find((product) => product.id === previewId);
+  const visibleProducts =
+    preview && !recent.some((product) => product.id === preview.id)
+      ? [preview, ...recent.slice(0, 3)]
+      : recent;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.select({ ios: "padding", android: "height" })}
-    >
-      <View style={styles.header}>
-        <Text style={styles.title}>Karrinho</Text>
-      </View>
-      <View style={styles.content}>
-          <View style={styles.energyOrbContainer}>
-            <EnergyOrb
-              intensity={0.9}
-              colors={["#cfd0f4ff", "#3a00e8ff", "#002ee8ff"]}
-            />
-          </View>
-
-          <View style={styles.headlineLabelContainer}>
-            <Text style={styles.headlineLabel}>Adicione produtos ao seu carrinho</Text>
-          </View>
-
+    <AppFrame active="home">
+      <KeyboardAvoidingView
+        style={styles.fill}
+        behavior={Platform.select({ ios: "padding", android: "height" })}
+      >
+        <ScrollView
+          style={styles.fill}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {loading ? (
-            <BorderBeam
-              style={styles.beamContainer}
-              borderRadius={36}
-              borderWidth={1}
-              colors={["#2563eb", "#67e8f9", "#2563eb"]}
-              ambient={0.04}
-              duration={2.8}
-              intensity={0.9}
-              glow={9}
-            >
-              <View style={[styles.formContainer]}>
-                <View style={styles.inputRow}>
-                  <InputURL
-                    value={productUrl}
-                    onChangeText={setProductUrl}
-                    editable={!loading}
-                    keyboardType="url"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    placeholder="Cole o link do produto"
-                    placeholderTextColor="#827d78"
-                    returnKeyType="go"
-                    onSubmitEditing={handleAddProduct}
-                    style={styles.urlInput}
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Adicionar produto"
-                    disabled={loading}
-                    onPress={() => void handleAddProduct()}
-                    style={({ pressed }) => [
-                      styles.addButton,
-                      pressed && styles.addButtonPressed,
-                      loading && styles.addButtonDisabled,
-                    ]}
-                  >
-                    <Ionicons name="arrow-up" size={21} color="#211b18" />
-                  </Pressable>
-                </View>
-              </View>
-              <Text style={styles.loadingLabel}>Adicionando...</Text>
-            </BorderBeam>
-          ) : (
-            <View style={styles.beamContainer}>
-              <View style={styles.formContainer}>
-                {product && (
-                  <View style={styles.confirmationCard}>
-                    <View style={styles.confirmationHeader}>
-                      <Text style={styles.savedLabel}>Salvo no carrinho</Text>
-                    </View>
-
-                    <View style={styles.previewRow}>
-                      {product.imageUrl && (
-                        <Image
-                          source={{ uri: product.imageUrl }}
-                          style={styles.previewImage}
-                        />
-                      )}
-                      <View style={styles.previewCopy}>
-                        <View style={styles.storeRow}>
-                          {product.faviconUrl && (
-                            <Image
-                              source={{ uri: product.faviconUrl }}
-                              style={styles.storeFavicon}
-                            />
-                          )}
-                          <Text style={styles.storeName}>
-                            {product.storeName}
-                          </Text>
-                        </View>
-                        <Text style={styles.productTitle} numberOfLines={2}>
-                          {product.title ?? "Produto sem nome"}
-                        </Text>
-                        <Text style={styles.productPrice}>
-                          {formatPrice(product.price, product.currency)}
-                        </Text>
-                      </View>
-                    </View>
+            <ActivityIndicator
+              color={colors.accent}
+              accessibilityLabel="Carregando produtos"
+            />
+          ) : products.length > 0 ? (
+            <View style={styles.recentSection}>
+              <View style={styles.sectionHeading}>
+                <Text
+                  accessibilityRole="header"
+                  style={[styles.sectionTitle, { color: colors.ink }]}
+                >
+                  Recentes
+                </Text>
+                <Pressable
+                  accessibilityLabel="Ver meu carrinho"
+                  onPress={() => router.push("/cart")}
+                  style={styles.textAction}
+                >
+                  <Text style={[styles.link, { color: colors.accent }]}>
+                    Ver tudo
+                  </Text>
+                  <View aria-hidden>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={17}
+                      color={colors.accent}
+                    />
                   </View>
-                )}
-                
-                <View style={styles.inputRow}>
-                  <InputURL
-                    value={productUrl}
-                    onChangeText={setProductUrl}
-                    keyboardType="url"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    placeholder="Cole o link do produto"
-                    placeholderTextColor="#827d78"
-                    returnKeyType="go"
-                    onSubmitEditing={handleAddProduct}
-                    style={styles.urlInput}
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="Adicionar produto"
-                    onPress={() => void handleAddProduct()}
-                    style={({ pressed }) => [
-                      styles.addButton,
-                      pressed && styles.addButtonPressed,
-                    ]}
-                  >
-                    <Ionicons name="arrow-up" size={21} color="#211b18" />
-                  </Pressable>
-                </View>
+                </Pressable>
+              </View>
+              <View testID="recent-grid" style={styles.grid}>
+                {[0, 2].map((offset) => {
+                  const row = visibleProducts.slice(offset, offset + 2);
+                  if (!row.length) return null;
+                  return (
+                    <View key={offset} style={styles.gridRow}>
+                      {row.map((product) => (
+                        <View
+                          key={product.id}
+                          testID="recent-cell"
+                          style={styles.gridCell}
+                        >
+                          <ProductCard
+                            product={product}
+                            layout="grid"
+                            highlighted={product.id === previewId}
+                            onPress={() => router.push("/cart")}
+                          />
+                        </View>
+                      ))}
+                      {row.length === 1 && <View style={styles.gridCell} />}
+                    </View>
+                  );
+                })}
               </View>
             </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={[styles.emptyText, { color: colors.muted }]}>
+                Cole um link abaixo para guardar seu primeiro produto. Seus
+                achados ficam juntos no carrinho.
+              </Text>
+            </View>
           )}
-        </View>
-      <BottomNav active="home" />
-    </KeyboardAvoidingView>
+          <View testID="home-composer" style={styles.composer}>
+            <Text
+              accessibilityRole="header"
+              style={[styles.heading, { color: colors.ink }]}
+            >
+              O que você encontrou?
+            </Text>
+            <View
+              style={[
+                styles.inputRow,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: focused ? colors.accent : colors.control,
+                },
+              ]}
+            >
+              <AnimatedInputBar
+                placeholders={PLACEHOLDERS}
+                disableAnimations={fontScale > 1.3}
+                value={productUrl}
+                onChangeText={setProductUrl}
+                editable={!saving}
+                keyboardType="url"
+                autoCapitalize="none"
+                autoCorrect={false}
+                accessibilityLabel="Link do produto"
+                returnKeyType="go"
+                onSubmitEditing={() => void handleAddProduct()}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                selectionColor={colors.accent}
+                placeholderTextColor={colors.muted}
+                characterEnterDuration={140}
+                characterDelayIncrement={4}
+                blurIntensityRange={[0, 0, 0]}
+                containerStyle={styles.inputContainer}
+                inputWrapperStyle={styles.inputWrapper}
+                inputStyle={[styles.input, { color: colors.ink }]}
+                placeholderStyle={[styles.input, { color: colors.muted }]}
+              />
+              <Pressable
+                accessibilityLabel="Adicionar produto"
+                accessibilityState={{ busy: saving }}
+                disabled={saving || !productUrl.trim()}
+                onPress={() => void handleAddProduct()}
+                style={[
+                  styles.submit,
+                  {
+                    backgroundColor:
+                      saving || !productUrl.trim()
+                        ? colors.soft
+                        : colors.accentFill,
+                  },
+                ]}
+              >
+                {saving ? (
+                  <ActivityIndicator color={colors.accent} />
+                ) : (
+                  <View aria-hidden>
+                    <Ionicons
+                      name="arrow-up"
+                      size={23}
+                      color={
+                        !productUrl.trim() ? colors.muted : colors.onAccent
+                      }
+                    />
+                  </View>
+                )}
+              </Pressable>
+            </View>
+            <View style={styles.hintRow}>
+              <View aria-hidden>
+                <Ionicons
+                  name={processing ? "time-outline" : "lock-closed-outline"}
+                  size={15}
+                  color={colors.muted}
+                />
+              </View>
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[styles.hint, { color: colors.muted }]}
+              >
+                {saving
+                  ? "Salvando link…"
+                  : processing
+                    ? "Buscando os dados. Pode adicionar outro."
+                    : "Seus links ficam salvos neste aparelho."}
+              </Text>
+            </View>
+            {(error || storageError) && (
+              <Text
+                accessibilityRole="alert"
+                style={[styles.error, { color: colors.danger }]}
+              >
+                {error || storageError}
+              </Text>
+            )}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AppFrame>
   );
 }
-
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#111010",
-    paddingBottom: 16,
-    paddingTop: 36,
-    paddingHorizontal: 16,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  container: {
-    flexGrow: 1,
-    paddingTop: 40,
-    paddingBottom: 12,
-  },
-  header: {
-    minHeight: 64,
-  },
-  eyebrow: {
-    color: "#6f7c87",
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 1.4,
-  },
-  title: {
-    color: "#f5f5f2",
-    fontSize: 28,
-    fontWeight: "700",
-    letterSpacing: -0.8,
-  },
-  content: {
-    flex: 1,
-    justifyContent: "flex-end",
-    paddingBottom: 8,
-  },
-  energyOrbContainer: {
-    minHeight: 190,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    pointerEvents: "none",
-  },
-  beamContainer: {
-    width: "100%",
-    borderRadius: 12,
-  },
-  formContainer: {
-    width: "100%",
-    gap: 13,
-    padding: 12,
-    backgroundColor: "#1d1b1a",
-    borderWidth: 1,
-    borderColor: "#393532",
-    borderRadius: 36,
-  },
-  headlineLabelContainer:{
-    padding: 12,
-  },
-  headlineLabel: {
-    color: "#f5f5f2",
-    fontSize: 18,
-    fontWeight: "400",
-    letterSpacing: -0.8,
+  fill: { flex: 1 },
+  content: { paddingTop: 32, paddingBottom: 24, gap: 32 },
+  composer: { gap: 16 },
+  heading: {
+    fontFamily: Type.bold,
+    fontSize: 26,
+    lineHeight: 33,
+    letterSpacing: -0.6,
   },
   inputRow: {
-    minHeight: 48,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    borderWidth: 1,
+    borderRadius: 19,
+    padding: 6,
+    gap: 4,
   },
-  urlInput: {
-    flex: 1,
-    minWidth: 0,
+  inputContainer: { flex: 1, minWidth: 0, marginVertical: 0 },
+  inputWrapper: { paddingHorizontal: 18, paddingVertical: 14, minHeight: 52 },
+  input: { fontFamily: Type.regular, fontSize: 16, lineHeight: 24 },
+  submit: {
+    width: 48,
     height: 48,
-    paddingHorizontal: 8,
-    color: "#eeeae5",
-    fontSize: 16,
-    backgroundColor: "transparent",
-    borderWidth: 0,
-  },
-  addButton: {
-    width: 44,
-    height: 44,
+    borderRadius: 15,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 22,
-    backgroundColor: "#e8e3dc",
   },
-  addButtonPressed: {
-    opacity: 0.72,
-  },
-  addButtonDisabled: {
-    opacity: 0.62,
-  },
-  loadingLabel: {
-    marginTop: 9,
-    paddingLeft: 8,
-    paddingBottom: 2,
-    color: "#b8aea7",
-    fontSize: 12,
-    fontWeight: "500",
-  },
-  confirmationCard: {
-    gap: 12,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#303030",
-  },
-  confirmationHeader: {
+  hintRow: { flexDirection: "row", alignItems: "flex-start", gap: 6 },
+  hint: { fontFamily: Type.regular, fontSize: 13, lineHeight: 19, flex: 1 },
+  error: { fontFamily: Type.regular, fontSize: 16, lineHeight: 24 },
+  sectionHeading: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 16,
   },
-  savedLabel: {
-    color: "#65e6bf",
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.2,
+  sectionTitle: {
+    fontFamily: Type.medium,
+    fontSize: 18,
+    lineHeight: 25,
+    flexShrink: 1,
   },
-  redirectLabel: {
-    color: "#73777b",
-    fontSize: 11,
-  },
-  previewRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  previewImage: {
-    width: 76,
-    height: 92,
-    borderRadius: 10,
-    backgroundColor: "#252525",
-  },
-  previewCopy: {
-    flex: 1,
-    justifyContent: "center",
-    gap: 5,
-  },
-  storeRow: {
+  textAction: {
+    minHeight: 48,
+    paddingHorizontal: 6,
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
   },
-  storeFavicon: {
-    width: 16,
-    height: 16,
-    borderRadius: 4,
-  },
-  storeName: {
-    color: "#9ba1a6",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  productTitle: {
-    color: "#f2f2ef",
-    fontSize: 15,
-    fontWeight: "600",
-    lineHeight: 20,
-  },
-  productPrice: {
-    color: "#ffffff",
-    fontSize: 20,
-    fontWeight: "700",
+  link: { fontFamily: Type.medium, fontSize: 14, lineHeight: 20 },
+  recentSection: { gap: 14 },
+  grid: { gap: 12 },
+  gridRow: { flexDirection: "row", gap: 12, alignItems: "stretch" },
+  gridCell: { flex: 1, minWidth: 0 },
+  empty: { paddingTop: 8, maxWidth: 320 },
+  emptyText: {
+    fontFamily: Type.regular,
+    fontSize: 16,
+    lineHeight: 24,
+    maxWidth: 480,
   },
 });

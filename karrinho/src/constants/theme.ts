@@ -1,65 +1,52 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
-import '@/global.css';
-
-import { Platform } from 'react-native';
-
-export const Colors = {
+/** Calm surfaces, readable type and a single, functional green accent. */
+export const Palette = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    background: "#F7F8F6",
+    surface: "#FFFFFF",
+    ink: "#242C27",
+    muted: "#626D65",
+    line: "#E0E5DF",
+    control: "#839186",
+    soft: "#EDF1EC",
+    accent: "#386348",
+    accentFill: "#386348",
+    onAccent: "#FFFFFF",
+    accentSoft: "#E8F0E8",
+    danger: "#AF3434",
+    dangerSoft: "#FBECEC",
+    warning: "#765923",
+    warningSoft: "#F8F1E3",
+    inverse: "#242C27",
+    onInverse: "#F7F8F6",
+    inverseMuted: "#C2CCC4",
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    background: "#121814",
+    surface: "#1B241E",
+    ink: "#EDF2ED",
+    muted: "#AFBDB2",
+    line: "#35463A",
+    control: "#748D7B",
+    soft: "#25332A",
+    accent: "#A5CEAE",
+    accentFill: "#ACD4B5",
+    onAccent: "#132319",
+    accentSoft: "#283F30",
+    danger: "#FFA3A3",
+    dangerSoft: "#432B2B",
+    warning: "#E8C689",
+    warningSoft: "#3B3425",
+    inverse: "#EDF2ED",
+    onInverse: "#17231B",
+    inverseMuted: "#4D6353",
   },
 } as const;
-
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
-
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
-
-export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+export type DesignColors = { [Key in keyof typeof Palette.light]: string };
+export const Type = {
+  regular: "Archivo_400Regular",
+  medium: "Archivo_500Medium",
+  bold: "Archivo_700Bold",
+  display: "Archivo_700Bold",
+  mono: "Archivo_400Regular",
 } as const;
-
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const Grid = { unit: 8, gutter: 20, maxWidth: 880, touch: 48 } as const;

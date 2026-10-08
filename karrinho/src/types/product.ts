@@ -24,4 +24,12 @@ export type ScrapedProduct = {
 export type SavedProduct = ScrapedProduct & {
   id: string;
   savedAt: string;
+  originalUrl: string;
+  status: "pending" | "processing" | "ready" | "needs_review";
+  attempts: number;
+  revision: number;
+  nextRetryAt: number | null;
+  lastError: string | null;
+  updatedAt: string;
+  lastCheckedAt: string | null;
 };

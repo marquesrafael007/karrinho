@@ -4,8 +4,8 @@
   "structure": "mirror",
   "aliases": {
     "components": "@/components",
-    "utils": "@/src/utils",
-    "hooks": "@/src/hooks"
+    "utils": "@/utils",
+    "hooks": "@/hooks"
   },
   "paths": {
     "utils": "src/utils",

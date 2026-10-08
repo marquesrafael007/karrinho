@@ -4,6 +4,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   type LayoutChangeEvent,
   type TextStyle,
   type ViewStyle,
@@ -45,6 +46,7 @@ import type {
   TChipValue,
 } from "./types";
 import { createCompoundComponent } from "@/utils/create-compound-component";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -65,6 +67,7 @@ const AnimatedChipGroup: React.FC<IAnimatedChipGroup> = ({
   springConfig = DEFAULT_SPRING,
   haptics = true,
   reserveWidth = true,
+  accessibilityLabel,
   style,
 }: IAnimatedChipGroup): React.JSX.Element => {
   const [uncontrolled, setUncontrolled] = useState<TChipValue | undefined>(
@@ -77,7 +80,7 @@ const AnimatedChipGroup: React.FC<IAnimatedChipGroup> = ({
     (next: TChipValue) => {
       if (next === selectedValue) return;
       if (haptics && Platform.OS !== "web") {
-        impactAsync(ImpactFeedbackStyle.Light);
+        void impactAsync(ImpactFeedbackStyle.Light).catch(() => undefined);
       }
       if (!isControlled) setUncontrolled(next);
       onValueChange?.(next);
@@ -131,6 +134,7 @@ const AnimatedChipGroup: React.FC<IAnimatedChipGroup> = ({
       <Animated.View
         style={[styles.group, { gap, width: reservedWidth }, style]}
         accessibilityRole="tablist"
+        accessibilityLabel={accessibilityLabel}
       >
         {children}
       </Animated.View>
@@ -144,12 +148,15 @@ const AnimatedChipItem: React.FC<IAnimatedChipItem> = ({
   activeColor = THEME.active,
   inactiveColor = THEME.inactive,
   disabled = false,
+  accessibilityLabel,
   style,
 }: IAnimatedChipItem): React.JSX.Element => {
   const { selectedValue, select, springConfig, registerItem } =
     useChipGroup("AnimatedChip.Item");
 
   const selected = selectedValue === value;
+  const reducedMotion = useReducedMotion();
+  const { fontScale } = useWindowDimensions();
 
   useEffect(() => registerItem(value), [registerItem, value]);
 
@@ -158,8 +165,13 @@ const AnimatedChipItem: React.FC<IAnimatedChipItem> = ({
   const pressed = useSharedValue<number>(0);
 
   useEffect(() => {
-    progress.value = withSpring(selected ? 1 : 0, springConfig);
-  }, [selected, springConfig, progress]);
+    progress.value = reducedMotion
+      ? selected
+        ? 1
+        : 0
+      : withSpring(selected ? 1 : 0, springConfig);
+    if (reducedMotion) pressed.value = 0;
+  }, [selected, springConfig, progress, reducedMotion, pressed]);
 
   const chipStyle = useAnimatedStyle<
     Pick<ViewStyle, "width" | "backgroundColor" | "transform">
@@ -189,15 +201,24 @@ const AnimatedChipItem: React.FC<IAnimatedChipItem> = ({
       <AnimatedPressable
         onPress={() => select(value)}
         onPressIn={() => {
-          pressed.value = withSpring(1, PRESS_SPRING);
+          if (!reducedMotion) pressed.value = withSpring(1, PRESS_SPRING);
         }}
         onPressOut={() => {
-          pressed.value = withSpring(0, PRESS_SPRING);
+          pressed.value = reducedMotion ? 0 : withSpring(0, PRESS_SPRING);
         }}
         disabled={disabled}
         accessibilityRole="tab"
+        accessibilityLabel={accessibilityLabel}
         accessibilityState={{ selected, disabled }}
-        style={[styles.chip, disabled && styles.disabled, chipStyle, style]}
+        aria-selected={selected}
+        aria-disabled={disabled}
+        style={[
+          styles.chip,
+          { height: Math.max(CHIP_HEIGHT, 24 * fontScale + 24) },
+          disabled && styles.disabled,
+          chipStyle,
+          style,
+        ]}
       >
         {children}
       </AnimatedPressable>
@@ -212,7 +233,7 @@ const AnimatedChipIcon: React.FC<IAnimatedChipIcon> = ({
   const { selected, value } = useChipItem("AnimatedChip.Icon");
 
   return (
-    <Animated.View style={[styles.icon, style]}>
+    <Animated.View aria-hidden style={[styles.icon, style]}>
       {renderChildren(children, { selected, value })}
     </Animated.View>
   );

@@ -3,6 +3,7 @@
     "name": "karrinho",
     "slug": "karrinho",
     "version": "1.0.0",
+    "icon": "./assets/branding/karrinho-icon.png",
     "orientation": "portrait",
     "scheme": "karrinho",
     "userInterfaceStyle": "automatic",
@@ -12,10 +13,16 @@
     },
     "android": {
       "package": "com.rafaelmarques.karrinho",
+      "icon": "./assets/branding/karrinho-icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/branding/karrinho-icon.png",
+        "backgroundColor": "#121814"
+      },
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "bundler": "metro",
+      "favicon": "./assets/branding/karrinho-icon.png",
       "output": "server"
     },
     "plugins": [
